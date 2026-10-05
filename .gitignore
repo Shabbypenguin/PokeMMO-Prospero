@@ -1,0 +1,6 @@
+docker/extra-ca/*.crt
+.ccache/
+.home/
+build/
+private/
+dist/
