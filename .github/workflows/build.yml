@@ -15,16 +15,23 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-24.04
-    container:
-      image: ghcr.io/${{ github.repository_owner }}/pokemmo-ps5-buildenv:latest
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
+      # Registry names must be lowercase; the owner name may not be (Shabbypenguin), and a job-level
+      # `container:` image can't be lowercased, so the image is run explicitly.
+      - name: Pull build environment image
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${OWNER,,}/pokemmo-ps5-buildenv:latest"
+          echo "IMAGE=$image" >> "$GITHUB_ENV"
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker pull "$image"
+
       - name: Build probe title and release zip
-        run: make package-probe
+        run: docker run --rm -v "$PWD:/work" -w /work "$IMAGE" make package-probe
 
       - name: Check title contents
         run: |
