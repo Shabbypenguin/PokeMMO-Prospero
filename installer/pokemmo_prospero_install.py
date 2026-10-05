@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 pokemmo-ps5 contributors
+# Copyright (C) 2026 PokeMMO-Prospero contributors
 # Upload approach (hidden temporary name, rename, eboot.bin and param.json last) follows
 # ps5-native-app-boilerplate's tools/deploy.sh (BlackBearReloaded, GPL-3.0-or-later).
-"""Install a pokemmo-ps5 title on a PS5 over FTP, and optionally upload your ROMs.
+"""Install a PokeMMO-Prospero title on a PS5 over FTP, and optionally upload your ROMs.
 
 Run it with no arguments and it asks for everything. Needs only Python 3.8+ (no extra packages) and an FTP
 server running on the console (for example ftpsrv, port 2121).
@@ -82,7 +82,7 @@ def human(size):
 # ---- saved settings (host, port, user; never the password) ------------------------------------
 def config_path():
     base = os.environ.get("APPDATA") if os.name == "nt" else os.environ.get("XDG_CONFIG_HOME", "~/.config")
-    return Path(os.path.expanduser(base or "~")) / "pokemmo-ps5" / "installer.json"
+    return Path(os.path.expanduser(base or "~")) / "pokemmo-prospero" / "installer.json"
 
 
 def load_config():
@@ -160,7 +160,7 @@ def find_default_package():
     candidates = []
     for directory in (here, here.parent, here.parent / "dist"):
         if directory.is_dir():
-            candidates += [p for p in directory.glob("*.zip") if "pokemmo-ps5" in p.name.lower() or re.match(r"PPSA\d{5}", p.name)]
+            candidates += [p for p in directory.glob("*.zip") if "pokemmo-prospero" in p.name.lower() or re.match(r"PPSA\d{5}", p.name)]
             candidates += [p for p in directory.iterdir() if p.is_dir() and re.fullmatch(r"PPSA\d{5}", p.name)]
     candidates = sorted(set(candidates), key=lambda p: p.stat().st_mtime, reverse=True)
     return candidates
@@ -326,11 +326,11 @@ def main():
     args = parser.parse_args()
     interactive = not args.yes and sys.stdin.isatty()
 
-    say("pokemmo-ps5 installer")
+    say("PokeMMO-Prospero installer")
     say("Unofficial; not affiliated with PokeMMO. The title downloads the PokeMMO client itself.")
     say()
 
-    with tempfile.TemporaryDirectory(prefix="pokemmo-ps5-") as scratch:
+    with tempfile.TemporaryDirectory(prefix="pokemmo-prospero-") as scratch:
         # 1. Which title
         package_path = args.package
         if package_path is None:
@@ -415,7 +415,7 @@ def run():
     except (ValueError, ConnectionError, RuntimeError, OSError, ftplib.Error, zipfile.BadZipFile, socket.timeout) as error:
         say(f"\nError: {error}")
         code = 1
-    if os.environ.get("POKEMMO_PS5_PAUSE") == "1":  # set by the double-click launchers so the window stays open
+    if os.environ.get("POKEMMO_PROSPERO_PAUSE") == "1":  # set by the double-click launchers so the window stays open
         try:
             input("\nPress Enter to close this window.")
         except EOFError:

@@ -36,6 +36,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: pokemmo-ps5-probe
-          path: dist/pokemmo-ps5-probe-installer.zip
+          name: pokemmo-prospero-probe
+          path: dist/pokemmo-prospero-probe-installer.zip
           if-no-files-found: error

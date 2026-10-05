@@ -1,6 +1,6 @@
 # Installer
 
-Copies a pokemmo-ps5 title to your PS5 over FTP and, if you want, your ROMs too. Works on Windows, macOS and Linux.
+Copies a PokeMMO-Prospero title to your PS5 over FTP and, if you want, your ROMs too. Works on Windows, macOS and Linux.
 
 ## Before you start
 
@@ -49,8 +49,8 @@ and HeartGold/SoulSilver and Platinum (`.nds`) add regions; see PokeMMO's own se
 ## Without questions (scripts, CI)
 
 ```bash
-python3 pokemmo_ps5_install.py --yes --package pokemmo-ps5-probe-PPSA27165.zip \
+python3 pokemmo_prospero_install.py --yes --package pokemmo-prospero-probe-PPSA27165.zip \
     --host 192.168.1.50 --port 2121 --user anonymous --password "" --roms ~/roms
 ```
 
-`--no-roms` skips the ROM step. `python3 pokemmo_ps5_install.py --help` lists every option.
+`--no-roms` skips the ROM step. `python3 pokemmo_prospero_install.py --help` lists every option.

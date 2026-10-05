@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# pokemmo-ps5. Run these targets inside the build environment (pokemmo-ps5-buildenv):
+# pokemmo-prospero. Run these targets inside the build environment (pokemmo-ps5-buildenv):
 #   ../pokemmo-ps5-buildenv/ps5env make <target>
 SHELL := bash
 
@@ -15,7 +15,7 @@ FTP_PORT ?= 2121
 
 help:
 	@echo "make probe          build the hardware probe title  (PROBE_LOG_HOST=192.168.x.y optional)"
-	@echo "make package-probe  probe + installer in one zip for players  (dist/pokemmo-ps5-probe-installer.zip)"
+	@echo "make package-probe  probe + installer in one zip for players  (dist/pokemmo-prospero-probe-installer.zip)"
 	@echo "make deploy-probe   upload it to /data/homebrew over FTP (PS5_HOST=..., FTP_PORT=$(FTP_PORT))"
 	@echo "make fetch-client   download the PokeMMO client into $(CLIENT_ZIP) (never committed)"
 	@echo "make analyze        check a client release against what the loader supports"
@@ -29,17 +29,17 @@ probe: env-check
 	@rm -rf build/probe-assets && mkdir -p build/probe-assets
 	@if [[ -n "$(PROBE_LOG_HOST)" ]]; then echo "$(PROBE_LOG_HOST)" > build/probe-assets/loghost.txt; \
 	 else echo "(no PROBE_LOG_HOST: UDP broadcast only)" > build/probe-assets/README.txt; fi
-	bash scripts/build-title.sh --title-id $(PROBE_TITLE_ID) --name "PokeMMO PS5 Probe" \
+	bash scripts/build-title.sh --title-id $(PROBE_TITLE_ID) --name "PokeMMO Prospero Probe" \
 		--sources probe --assets build/probe-assets --content-suffix PROBE
-	@mkdir -p dist && cp build/titles/$(PROBE_TITLE_ID)/dist/$(PROBE_TITLE_ID).zip dist/pokemmo-ps5-probe-$(PROBE_TITLE_ID).zip
-	@echo "Deploy: unzip dist/pokemmo-ps5-probe-$(PROBE_TITLE_ID).zip into /data/homebrew/ on the console"
+	@mkdir -p dist && cp build/titles/$(PROBE_TITLE_ID)/dist/$(PROBE_TITLE_ID).zip dist/pokemmo-prospero-probe-$(PROBE_TITLE_ID).zip
+	@echo "Deploy: unzip dist/pokemmo-prospero-probe-$(PROBE_TITLE_ID).zip into /data/homebrew/ on the console"
 
 package-probe: probe
-	@rm -rf build/package && mkdir -p build/package/pokemmo-ps5-probe
-	cp installer/pokemmo_ps5_install.py installer/install.bat installer/install.command installer/install.sh \
-		installer/README.md LICENSE CREDITS.md dist/pokemmo-ps5-probe-$(PROBE_TITLE_ID).zip build/package/pokemmo-ps5-probe/
-	cd build/package && rm -f ../../dist/pokemmo-ps5-probe-installer.zip && zip -q -X -r ../../dist/pokemmo-ps5-probe-installer.zip pokemmo-ps5-probe
-	@echo "Release zip: dist/pokemmo-ps5-probe-installer.zip (title + installer for Windows/macOS/Linux)"
+	@rm -rf build/package && mkdir -p build/package/pokemmo-prospero-probe
+	cp installer/pokemmo_prospero_install.py installer/install.bat installer/install.command installer/install.sh \
+		installer/README.md LICENSE CREDITS.md dist/pokemmo-prospero-probe-$(PROBE_TITLE_ID).zip build/package/pokemmo-prospero-probe/
+	cd build/package && rm -f ../../dist/pokemmo-prospero-probe-installer.zip && zip -q -X -r ../../dist/pokemmo-prospero-probe-installer.zip pokemmo-prospero-probe
+	@echo "Release zip: dist/pokemmo-prospero-probe-installer.zip (title + installer for Windows/macOS/Linux)"
 
 deploy-probe: env-check
 	@[[ -n "$(PS5_HOST)" ]] || { echo "set PS5_HOST to the console's IP"; exit 2; }

@@ -27,7 +27,7 @@ def main():
     args.output.parent.mkdir(parents=True, exist_ok=True)
     partial = args.output.with_suffix(".part")
     digest = hashlib.sha256()
-    request = urllib.request.Request(args.url, headers={"User-Agent": "pokemmo-ps5/1.0"})
+    request = urllib.request.Request(args.url, headers={"User-Agent": "pokemmo-prospero/1.0"})
     try:
         with urllib.request.urlopen(request, timeout=60) as response, partial.open("wb") as out:
             resolved = response.url

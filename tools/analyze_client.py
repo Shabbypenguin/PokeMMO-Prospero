@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 pokemmo-ps5 contributors
+# Copyright (C) 2026 PokeMMO-Prospero contributors
 """Check a PokeMMO client release against what the PS5 loader supports.
 
 Run it on every new client revision (make analyze, inside the build environment). It reports the facts the loader

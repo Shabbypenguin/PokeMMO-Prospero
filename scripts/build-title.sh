@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 pokemmo-ps5 contributors
+# Copyright (C) 2026 PokeMMO-Prospero contributors
 # Assemble a native PS5 title (FSELF eboot + libc.prx shim + sce_sys) that links ps5-opengl.
 #
 # Runs inside the build environment (pokemmo-ps5-buildenv). It follows the same integration ps5-opengl's own

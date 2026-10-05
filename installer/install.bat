@@ -1,17 +1,17 @@
 @echo off
 rem SPDX-License-Identifier: GPL-3.0-or-later
-rem pokemmo-ps5 installer launcher for Windows: double-click this file.
+rem PokeMMO-Prospero installer launcher for Windows: double-click this file.
 setlocal
 cd /d "%~dp0"
-set POKEMMO_PS5_PAUSE=1
+set POKEMMO_PROSPERO_PAUSE=1
 where py >nul 2>nul
 if %errorlevel%==0 (
-    py -3 pokemmo_ps5_install.py %*
+    py -3 pokemmo_prospero_install.py %*
     exit /b
 )
 where python >nul 2>nul
 if %errorlevel%==0 (
-    python pokemmo_ps5_install.py %*
+    python pokemmo_prospero_install.py %*
     exit /b
 )
 echo Python 3 is required. Install it from https://www.python.org/downloads/

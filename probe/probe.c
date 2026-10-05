@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 pokemmo-ps5 contributors
-// pokemmo-ps5 hardware probe.
+// Copyright (C) 2026 PokeMMO-Prospero contributors
+// PokeMMO-Prospero hardware probe.
 //
 // Answers, on the user's own console and firmware, the questions the loader design depends on:
 //   gl     OpenGL 2.1 request without a profile mask (exactly what the client asks for) -> compatibility context,
@@ -506,11 +506,11 @@ static void probeFiles(void) {
     mark("fs.download0", ok ? PASS : FAIL);
     struct stat data;
     int rc_data = stat("/data", &data);
-    int data_fd = open("/data/.pokemmo-ps5-probe", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    int data_fd = open("/data/.pokemmo-prospero-probe", O_WRONLY | O_CREAT | O_TRUNC, 0644);
     say("fs /data stat=%d writable=%d (info only: titles are sandboxed by default)", rc_data, data_fd >= 0);
     if (data_fd >= 0) {
         close(data_fd);
-        unlink("/data/.pokemmo-ps5-probe");
+        unlink("/data/.pokemmo-prospero-probe");
     }
 }
 
@@ -841,7 +841,7 @@ static void drawTiles(void) {
 
 int main(void) {
     logInit();
-    say("pokemmo-ps5 %s starting; UDP log port %d%s", PROBE_VERSION, PROBE_PORT, log_has_host ? " (+unicast host)" : "");
+    say("PokeMMO-Prospero %s starting; UDP log port %d%s", PROBE_VERSION, PROBE_PORT, log_has_host ? " (+unicast host)" : "");
     guardInstall();
     probeSystem();
     bool have_gl = glOpen();

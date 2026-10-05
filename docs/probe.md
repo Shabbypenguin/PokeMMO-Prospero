@@ -1,6 +1,6 @@
 # Hardware probe
 
-`probe/` builds a small native title (`PPSA27165`, "PokeMMO PS5 Probe") that checks, on a real console, every
+`probe/` builds a small native title (`PPSA27165`, "PokeMMO Prospero Probe") that checks, on a real console, every
 platform behavior the loader design depends on. Run it once per firmware/toolchain change and attach the log to
 any bug report.
 
@@ -13,12 +13,12 @@ From the build environment (see `pokemmo-ps5-buildenv`):
 ../pokemmo-ps5-buildenv/ps5env make package-probe                               # zip with the installer
 ```
 
-1. Install it: unzip `dist/pokemmo-ps5-probe-installer.zip` on your PC and run the installer for your OS
+1. Install it: unzip `dist/pokemmo-prospero-probe-installer.zip` on your PC and run the installer for your OS
    (`install.bat`, `install.command`, `install.sh`; see [installer/README.md](../installer/README.md)). Say yes to
    the ROM question to also test the ROM path (`fs.app0roms`). From a checkout you can instead run
    `../pokemmo-ps5-buildenv/ps5env make deploy-probe PS5_HOST=<console IP>`.
 2. On your PC: `python3 tools/udplog.py --out probe.log` (UDP port 18194).
-3. Launch **PokeMMO PS5 Probe** from the home screen.
+3. Launch **PokeMMO Prospero Probe** from the home screen.
 4. The log streams to your PC: broadcast, plus unicast to `PROBE_LOG_HOST` if set. The probe also writes it to
    `/download0/probe.log`, but that is inside the title's storage image and is **not** reachable over FTP, so the
    UDP log is the one to keep.
