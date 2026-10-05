@@ -29,7 +29,7 @@ Start with the buildenv repository's README; it builds this one.
 ## Quick start
 
 ```bash
-git clone <buildenv-repo-url> pokemmo-ps5-buildenv
+git clone https://github.com/Shabbypenguin/pokemmo-ps5-buildenv.git
 git clone https://github.com/Shabbypenguin/PokeMMO-Prospero.git   # side by side
 cd PokeMMO-Prospero
 ../pokemmo-ps5-buildenv/ps5env build                # once: build the toolchain image
