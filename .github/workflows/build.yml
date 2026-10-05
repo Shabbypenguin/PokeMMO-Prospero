@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Builds the probe title inside the image published by the pokemmo-ps5-buildenv repository
+# (same owner, see that repo's image workflow). The PokeMMO client is never downloaded here.
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/pokemmo-ps5-buildenv:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build probe title
+        run: make probe
+
+      - name: Check title contents
+        run: |
+          set -euo pipefail
+          title=build/titles/PPSA27165/dist/PPSA27165
+          for file in eboot.bin sce_module/libc.prx sce_sys/param.json; do
+            test -s "$title/$file"
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pokemmo-ps5-probe
+          path: dist/*.zip
+          if-no-files-found: error

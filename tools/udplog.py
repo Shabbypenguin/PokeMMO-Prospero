@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 pokemmo-ps5 contributors
 """Receive the probe's (and later the loader's) UDP log: python3 tools/udplog.py [--port 18194] [--out probe.log]"""
 
 import argparse

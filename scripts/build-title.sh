@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 pokemmo-ps5 contributors
 # Assemble a native PS5 title (FSELF eboot + libc.prx shim + sce_sys) that links ps5-opengl.
 #
-# Runs inside the toolchain image (scripts/ps5env). It follows the same integration ps5-opengl's own
+# Runs inside the build environment (pokemmo-ps5-buildenv). It follows the same integration ps5-opengl's own
 # native test builder uses (heap size, malloc wraps, linker script, AGC import stubs) so we stay on the
 # path that project validated on hardware.
 #
@@ -13,7 +15,7 @@
 set -euo pipefail
 
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-template=${PS5_NATIVE_APP_TEMPLATE:?run inside the toolchain image (scripts/ps5env)}
+template=${PS5_NATIVE_APP_TEMPLATE:?run inside the build environment: ../pokemmo-ps5-buildenv/ps5env make probe}
 sdk=${PS5_PAYLOAD_SDK:?}
 prefix=${PS5_OPENGL_PREFIX:?}
 glsrc=${PS5_OPENGL_SOURCE:?}

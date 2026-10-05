@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 pokemmo-ps5 contributors
 // pokemmo-ps5 hardware probe.
 //
 // Answers, on the user's own console and firmware, the questions the loader design depends on:

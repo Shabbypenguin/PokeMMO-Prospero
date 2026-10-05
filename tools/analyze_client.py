@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 pokemmo-ps5 contributors
 """Check a PokeMMO client release against what the PS5 loader supports.
 
-Run it on every new client revision (scripts/ps5env make analyze). It reports the facts the loader
+Run it on every new client revision (make analyze, inside the build environment). It reports the facts the loader
 depends on and exits non-zero when the client needs something the loader has not been taught yet:
 
   imports       every libc/zlib symbol the client binds; new ones need a shim
@@ -11,7 +13,7 @@ depends on and exits non-zero when the client needs something the loader has not
   segment regs  %fs/%gs accesses (only the %fs:0x28 stack canary is expected)
   libraries     shared objects the client dlopen()s at runtime (each needs a virtual library)
 
-Needs binutils (readelf, objdump), present in the toolchain image.
+Needs binutils (readelf, objdump), present in the build environment image.
 """
 
 import argparse

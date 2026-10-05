@@ -58,3 +58,9 @@ Title with icon/backgrounds, ROM/setup instructions, a release script that downl
    128 MiB by default; native allocations (Mesa, SDL shim, client natives) must fit, so the title may need a bigger one.
 3. Title sandbox: writable storage is `/download0` only (size set in `param.json`); ROMs are copied there over FTP.
 4. Firmware updates can break the jailbreak chain independently of this project.
+
+## Hardware status
+
+| Firmware | Console setup | Probe result | Date |
+|----------|---------------|--------------|------|
+| 12.40 | kstuff-lite | not run yet | — |

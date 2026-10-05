@@ -1,38 +1,48 @@
-# pokemmo-ps5 — run targets inside the toolchain image: scripts/ps5env make <target>
+# SPDX-License-Identifier: GPL-3.0-or-later
+# pokemmo-ps5. Run these targets inside the build environment (pokemmo-ps5-buildenv):
+#   ../pokemmo-ps5-buildenv/ps5env make <target>
 SHELL := bash
 
 PROBE_TITLE_ID ?= PPSA27165
 # Optional: your PC's LAN address; the probe also sends its log there (it always broadcasts too).
 PROBE_LOG_HOST ?=
 CLIENT_ZIP ?= private/PokeMMO-Client.zip
-
-# Console FTP (ftpsrv) for deploy-probe.
+# Console FTP server (ftpsrv) for deploy-probe.
 PS5_HOST ?=
 FTP_PORT ?= 2121
 
-.PHONY: help probe deploy-probe analyze clean
+.PHONY: help env-check probe deploy-probe fetch-client analyze clean
 
 help:
 	@echo "make probe          build the hardware probe title  (PROBE_LOG_HOST=192.168.x.y optional)"
 	@echo "make deploy-probe   upload it to /data/homebrew over FTP (PS5_HOST=..., FTP_PORT=$(FTP_PORT))"
-	@echo "make analyze        check a client release           (CLIENT_ZIP=$(CLIENT_ZIP))"
+	@echo "make fetch-client   download the PokeMMO client into $(CLIENT_ZIP) (never committed)"
+	@echo "make analyze        check a client release against what the loader supports"
 	@echo "make clean          remove build outputs"
 
-probe:
+env-check:
+	@[[ -n "$$PS5_NATIVE_APP_TEMPLATE" && -n "$$PS5_OPENGL_PREFIX" ]] || { \
+		echo "Not inside the build environment. Use: ../pokemmo-ps5-buildenv/ps5env make $(MAKECMDGOALS)"; exit 2; }
+
+probe: env-check
 	@rm -rf build/probe-assets && mkdir -p build/probe-assets
 	@if [[ -n "$(PROBE_LOG_HOST)" ]]; then echo "$(PROBE_LOG_HOST)" > build/probe-assets/loghost.txt; \
 	 else echo "(no PROBE_LOG_HOST: UDP broadcast only)" > build/probe-assets/README.txt; fi
 	bash scripts/build-title.sh --title-id $(PROBE_TITLE_ID) --name "PokeMMO PS5 Probe" \
 		--sources probe --assets build/probe-assets --content-suffix PROBE
 	@mkdir -p dist && cp build/titles/$(PROBE_TITLE_ID)/dist/$(PROBE_TITLE_ID).zip dist/pokemmo-ps5-probe-$(PROBE_TITLE_ID).zip
-	@echo "Deploy: unzip dist/pokemmo-ps5-probe-$(PROBE_TITLE_ID).zip to /data/homebrew/ on the console"
+	@echo "Deploy: unzip dist/pokemmo-ps5-probe-$(PROBE_TITLE_ID).zip into /data/homebrew/ on the console"
 
-deploy-probe:
+deploy-probe: env-check
 	@[[ -n "$(PS5_HOST)" ]] || { echo "set PS5_HOST to the console's IP"; exit 2; }
 	@[[ -d build/titles/$(PROBE_TITLE_ID) ]] || { echo "run 'make probe' first"; exit 2; }
 	$(MAKE) -C build/titles/$(PROBE_TITLE_ID) --no-print-directory deploy PS5_HOST=$(PS5_HOST) FTP_PORT=$(FTP_PORT)
 
+fetch-client:
+	python3 tools/fetch_client.py --output "$(CLIENT_ZIP)"
+
 analyze:
+	@[[ -f "$(CLIENT_ZIP)" ]] || { echo "no client at $(CLIENT_ZIP): run 'make fetch-client' first"; exit 2; }
 	python3 tools/analyze_client.py "$(CLIENT_ZIP)"
 
 clean:
