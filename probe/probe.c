@@ -32,6 +32,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
+#include <dirent.h>
 #include <sys/stat.h>
 #include <sys/sysctl.h>
 #include <sys/time.h>
@@ -71,7 +72,7 @@ static Check checks[] = {
     {"gl.context", NOT_RUN},  {"gl.compat", NOT_RUN},   {"gl.glsl110", NOT_RUN}, {"gl.glsl120", NOT_RUN},
     {"gl.glsl130", NOT_RUN},  {"gl.clientarr", NOT_RUN}, {"gl.vbo-novao", NOT_RUN}, {"gl.blend", NOT_RUN},
     {"gl.immediate", NOT_RUN}, {"tls.fs28", NOT_RUN},   {"thread.stack", NOT_RUN}, {"thread.getattr", NOT_RUN},
-    {"vm.reserve", NOT_RUN},  {"vm.fixed", NOT_RUN},    {"vm.commit", NOT_RUN},  {"vm.direct", NOT_RUN},  {"vm.directfixed", NOT_RUN}, {"fs.download0", NOT_RUN},
+    {"vm.reserve", NOT_RUN},  {"vm.fixed", NOT_RUN},    {"vm.commit", NOT_RUN},  {"vm.direct", NOT_RUN},  {"vm.directfixed", NOT_RUN}, {"fs.download0", NOT_RUN}, {"fs.app0roms", NOT_RUN},
     {"net.dns", NOT_RUN},     {"net.tcp", NOT_RUN},     {"exec.rwx", NOT_RUN},   {"exec.mprotect", NOT_RUN},
     {"exec.jit", NOT_RUN},
 };
@@ -442,6 +443,54 @@ static void probeVm(void) {
 }
 
 // ---- filesystem -----------------------------------------------------------------------------------
+// The installer uploads ROMs to /data/homebrew/<TITLE_ID>/roms/, which the title mounter exposes read-only as
+// /app0/roms. Check that the files show up there and can be read end to end (PASS), or report that no ROMs were
+// uploaded (INFO). The client only reads ROMs; its caches go to /download0.
+static void probeAppRoms(void) {
+    say("BEGIN fs.app0roms");
+    DIR *directory = opendir("/app0/roms");
+    if (!directory) {
+        say("fs /app0/roms not present errno=%d (upload ROMs with the installer to test this path)", errno);
+        mark("fs.app0roms", INFO);
+        return;
+    }
+    unsigned files = 0, readable = 0;
+    struct dirent *entry;
+    while ((entry = readdir(directory))) {
+        if (entry->d_name[0] == '.') continue;
+        char path[512];
+        snprintf(path, sizeof(path), "/app0/roms/%s", entry->d_name);
+        struct stat info;
+        if (stat(path, &info) || !S_ISREG(info.st_mode)) continue;
+        ++files;
+        int fd = open(path, O_RDONLY);
+        long long total = 0;
+        unsigned char header[16] = {0};
+        if (fd >= 0) {
+            static char block[1 << 16];
+            ssize_t got;
+            bool first = true;
+            while ((got = read(fd, block, sizeof(block))) > 0) {
+                if (first) memcpy(header, block, got < 16 ? (size_t)got : 16), first = false;
+                total += got;
+            }
+            close(fd);
+        }
+        bool ok = fd >= 0 && total == (long long)info.st_size;
+        readable += ok;
+        say("fs rom %s size=%lld read=%lld ok=%d header=%02x%02x%02x%02x", entry->d_name, (long long)info.st_size, total, ok,
+            header[0], header[1], header[2], header[3]);
+    }
+    closedir(directory);
+    int probe_fd = open("/app0/roms/.write-test", O_WRONLY | O_CREAT, 0644);
+    say("fs /app0/roms files=%u readable=%u writable=%d (expected read-only)", files, readable, probe_fd >= 0);
+    if (probe_fd >= 0) {
+        close(probe_fd);
+        unlink("/app0/roms/.write-test");
+    }
+    mark("fs.app0roms", files == 0 ? INFO : readable == files ? PASS : FAIL);
+}
+
 static void probeFiles(void) {
     say("BEGIN fs.download0");
     bool ok = mkdir("/download0/probe-dir", 0755) == 0 || errno == EEXIST;
@@ -801,6 +850,7 @@ int main(void) {
     probeThreads();
     probeVm();
     probeFiles();
+    probeAppRoms();
     probeNetwork();
     probeExec();  // last: the likeliest to take the title down
 

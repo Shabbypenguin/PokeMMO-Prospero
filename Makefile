@@ -11,10 +11,11 @@ CLIENT_ZIP ?= private/PokeMMO-Client.zip
 PS5_HOST ?=
 FTP_PORT ?= 2121
 
-.PHONY: help env-check probe deploy-probe fetch-client analyze clean
+.PHONY: help env-check probe package-probe deploy-probe fetch-client analyze clean
 
 help:
 	@echo "make probe          build the hardware probe title  (PROBE_LOG_HOST=192.168.x.y optional)"
+	@echo "make package-probe  probe + installer in one zip for players  (dist/pokemmo-ps5-probe-installer.zip)"
 	@echo "make deploy-probe   upload it to /data/homebrew over FTP (PS5_HOST=..., FTP_PORT=$(FTP_PORT))"
 	@echo "make fetch-client   download the PokeMMO client into $(CLIENT_ZIP) (never committed)"
 	@echo "make analyze        check a client release against what the loader supports"
@@ -32,6 +33,13 @@ probe: env-check
 		--sources probe --assets build/probe-assets --content-suffix PROBE
 	@mkdir -p dist && cp build/titles/$(PROBE_TITLE_ID)/dist/$(PROBE_TITLE_ID).zip dist/pokemmo-ps5-probe-$(PROBE_TITLE_ID).zip
 	@echo "Deploy: unzip dist/pokemmo-ps5-probe-$(PROBE_TITLE_ID).zip into /data/homebrew/ on the console"
+
+package-probe: probe
+	@rm -rf build/package && mkdir -p build/package/pokemmo-ps5-probe
+	cp installer/pokemmo_ps5_install.py installer/install.bat installer/install.command installer/install.sh \
+		installer/README.md LICENSE CREDITS.md dist/pokemmo-ps5-probe-$(PROBE_TITLE_ID).zip build/package/pokemmo-ps5-probe/
+	cd build/package && rm -f ../../dist/pokemmo-ps5-probe-installer.zip && zip -q -X -r ../../dist/pokemmo-ps5-probe-installer.zip pokemmo-ps5-probe
+	@echo "Release zip: dist/pokemmo-ps5-probe-installer.zip (title + installer for Windows/macOS/Linux)"
 
 deploy-probe: env-check
 	@[[ -n "$(PS5_HOST)" ]] || { echo "set PS5_HOST to the console's IP"; exit 2; }

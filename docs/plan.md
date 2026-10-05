@@ -46,9 +46,45 @@ Virtual libEGL/libGL backed by ps5-opengl, EGL window at 1080p. Milestone: login
 
 SDL3 shim on scePad (controller → mouse/keys mapping like NX), OpenAL shim on AudioOut, IME dialog for login/chat.
 
-## Phase 5 — packaging
+## Phase 5 — launcher and on-console client updates
 
-Title with icon/backgrounds, ROM/setup instructions, a release script that downloads the client on the build host.
+The title fetches PokeMMO's client itself, so releases never contain PokeMMO files and players don't need a PC
+to update. Updates are **on by default**, with a button to skip.
+
+1. **Check.** `HEAD https://dl.pokemmo.com/download/PokeMMO-Client.zip` and compare the `ETag` (plus
+   `Content-Length`/`Last-Modified`) with the installed one. Observed 2026-10-05: `accept-ranges: bytes`,
+   `etag: "6a822758-102e8cfe"` (nginx-style: hex mtime – hex size; `0x102e8cfe` = 271486206 bytes = revision 32920,
+   mtime = `Last-Modified` 2026-08-16), served through Cloudflare (`max-age=14400`, so a new release can take up to
+   4 h to show).
+2. **Show versions.** Range requests are supported, so read the zip's central directory (the last ~64 KiB), then
+   `revision.txt` alone, to show "32920 → 329xx" without downloading 271 MB.
+3. **Prompt.** "Update available — ✕ Download / ○ Skip", auto-continuing with the default after a few seconds.
+   First launch with no client: download is required.
+4. **Download** over HTTPS with certificate verification (console `sceHttp`, proven in sandboxed titles, or
+   libcurl), resumable with range requests, progress bar.
+5. **Extract only what the PS5 needs** (`bin/linux/x64/PokeMMO`, `data/`, `config/`, `revision.txt`; ~320 MB of
+   Windows/macOS binaries skipped), checking each entry's CRC.
+6. **Verify, then switch.** x86-64 ELF check, then the loader confirms it can resolve every import. Two slots
+   (A/B) in `/download0`; "current" moves only after verification. A version that fails to load falls back to the
+   previous one, with the reason on screen.
+
+Open: whether the client's own updater (data feeds) runs on Linux and touches its binary; the loader must
+intercept any attempt to replace or re-exec itself.
+
+## Phase 6 — packaging
+
+Release zip = title folder + installer (`installer/`), icon/backgrounds, ROM instructions.
+
+### Install layout
+
+| What | On the console (FTP) | Seen by the title as | Written by |
+|------|----------------------|----------------------|------------|
+| Title | `/data/homebrew/PPSA27166/` | `/app0/` (read-only) | installer |
+| ROMs | `/data/homebrew/PPSA27166/roms/` | `/app0/roms/` (read-only) | installer |
+| Client slots, caches, config, logs | inside the title storage image | `/download0/` | the title |
+
+`/download0` is a storage image, not a folder FTP can browse, so logs go out over UDP. Probe check `fs.app0roms` confirms the ROM
+path on real hardware. `downloadDataSize` must cover two client slots + caches (~1.5–2 GB).
 
 ## Open risks
 
@@ -56,7 +92,8 @@ Title with icon/backgrounds, ROM/setup instructions, a release script that downl
 2. Anonymous mmap draws on flexible memory, which ps5-opengl notes holds only a few hundred MiB. The 640 MiB Java heap will
    likely need direct memory behind the mmap shim (probe: vm.commit vs vm.direct). The app heap caps native `malloc` at
    128 MiB by default; native allocations (Mesa, SDL shim, client natives) must fit, so the title may need a bigger one.
-3. Title sandbox: writable storage is `/download0` only (size set in `param.json`); ROMs are copied there over FTP.
+3. Title sandbox: writable storage is `/download0` only (size set in `param.json`) and it is not reachable over FTP;
+   ROMs go next to the title instead (see the install layout above; to be confirmed by `fs.app0roms`).
 4. Firmware updates can break the jailbreak chain independently of this project.
 
 ## Hardware status

@@ -36,13 +36,15 @@ cd pokemmo-ps5
 ../pokemmo-ps5-buildenv/ps5env make probe           # build the hardware probe title
 ```
 
-Then follow [docs/probe.md](docs/probe.md).
+Then follow [docs/probe.md](docs/probe.md). Players get a single zip with the title and the installer
+(`make package-probe`; the game title will ship the same way).
 
 ## Layout
 
 | Path | What |
 |------|------|
 | `probe/` | hardware probe title: checks the platform behaviors the loader depends on |
+| `installer/` | Windows/macOS/Linux installer: uploads a title over FTP and optionally your ROMs ([README](installer/README.md)) |
 | `scripts/build-title.sh` | assembles a native PS5 title (FSELF + `libc.prx` + `sce_sys`) that links ps5-opengl |
 | `tools/fetch_client.py` | downloads the PokeMMO client into `private/` (ignored by git) |
 | `tools/analyze_client.py` | checks a client release against what the loader supports; run on every PokeMMO update |

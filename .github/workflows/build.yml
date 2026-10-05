@@ -23,8 +23,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build probe title
-        run: make probe
+      - name: Build probe title and release zip
+        run: make package-probe
 
       - name: Check title contents
         run: |
@@ -37,5 +37,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: pokemmo-ps5-probe
-          path: dist/*.zip
+          path: dist/pokemmo-ps5-probe-installer.zip
           if-no-files-found: error
