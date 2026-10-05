@@ -1,4 +1,4 @@
-# pokemmo-ps5
+# PokeMMO-Prospero
 
 An unofficial effort to run the official, unmodified PokeMMO Linux client natively on a jailbroken PS5.
 
@@ -21,7 +21,7 @@ The PokeMMO client is **never included** in this repository or its builds: you d
 
 | Repository | Contents |
 |------------|----------|
-| **pokemmo-ps5** (this one) | the port: probe, loader (coming), title build script, client analysis tools, docs |
+| **PokeMMO-Prospero** (this one) | the port: probe, loader (coming), title build script, client analysis tools, docs |
 | **pokemmo-ps5-buildenv** | the pinned toolchain image and the guide for building, setting up a console and maintaining the project |
 
 Start with the buildenv repository's README; it builds this one.
@@ -30,8 +30,8 @@ Start with the buildenv repository's README; it builds this one.
 
 ```bash
 git clone <buildenv-repo-url> pokemmo-ps5-buildenv
-git clone <this-repo-url>     pokemmo-ps5           # side by side
-cd pokemmo-ps5
+git clone https://github.com/Shabbypenguin/PokeMMO-Prospero.git   # side by side
+cd PokeMMO-Prospero
 ../pokemmo-ps5-buildenv/ps5env build                # once: build the toolchain image
 ../pokemmo-ps5-buildenv/ps5env make probe           # build the hardware probe title
 ```
