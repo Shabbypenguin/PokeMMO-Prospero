@@ -31,7 +31,7 @@
 #include <sys/ucontext.h>
 #include <unistd.h>
 
-#define LOADER_MILESTONE "loader-1"
+#define LOADER_MILESTONE "loader-2"
 // ps5-opengl's app heap (malloc of the loader and of everything the client allocates with malloc): from direct memory.
 const size_t ps5_opengl_heap_size = 768u << 20;
 
@@ -236,7 +236,7 @@ static void checkApp0Write(void) {
     mark("fs.app0write", written == 16 * sizeof(block) ? PASS : FAIL);
 }
 
-// How much the title's storage really holds: write until it refuses or 2 GiB, then delete.
+// How much the title's storage really holds: write until it refuses or 1 GiB, then delete (loader-1 showed 2 GiB works).
 static void checkDownload0Size(void) {
     mark("fs.download0size", RUNNING);
     const char *path = "/download0/prospero-size-test.bin";
@@ -246,7 +246,7 @@ static void checkDownload0Size(void) {
         mark("fs.download0size", FAIL);
         return;
     }
-    size_t chunk = 8u << 20, total = 0, limit = (size_t)2 << 30;
+    size_t chunk = 8u << 20, total = 0, limit = (size_t)1 << 30;
     char *buffer = malloc(chunk);
     int error = 0;
     uint64_t start = platformMonotonicNs();
@@ -264,7 +264,7 @@ static void checkDownload0Size(void) {
     unlink(path);
     free(buffer);
     double seconds = (double)(platformMonotonicNs() - start) / 1e9;
-    say("fs download0size: %zu MiB written before %s (error %d), %.0f MiB/s", total >> 20, total >= limit ? "the 2 GiB limit" : "a refusal", error,
+    say("fs download0size: %zu MiB written before %s (error %d), %.0f MiB/s", total >> 20, total >= limit ? "the 1 GiB limit" : "a refusal", error,
         seconds > 0 ? (double)(total >> 20) / seconds : 0.0);
     mark("fs.download0size", total >= limit ? PASS : INFO);
 }
@@ -285,13 +285,61 @@ static int loadModule(const char *name) {
     }
     return -1;
 }
+// Sony's NID of a symbol name: SHA-1 of the name and a fixed suffix, first 8 bytes reversed, base64 with '+' and '-'.
+static void sha1(const unsigned char *data, size_t length, unsigned char out[20]) {
+    uint32_t h[5] = {0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476, 0xc3d2e1f0};
+    unsigned char block[64];
+    size_t total = length + 9, blocks = (total + 63) / 64;
+    for (size_t b = 0; b < blocks; ++b) {
+        for (size_t i = 0; i < 64; ++i) {
+            size_t at = b * 64 + i;
+            block[i] = at < length ? data[at] : at == length ? 0x80 : 0;
+        }
+        if (b == blocks - 1)
+            for (int i = 0; i < 8; ++i) block[63 - i] = (unsigned char)(((uint64_t)length * 8) >> (8 * i));
+        uint32_t w[80];
+        for (int i = 0; i < 16; ++i) w[i] = (uint32_t)block[4 * i] << 24 | block[4 * i + 1] << 16 | block[4 * i + 2] << 8 | block[4 * i + 3];
+        for (int i = 16; i < 80; ++i) {
+            uint32_t x = w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16];
+            w[i] = x << 1 | x >> 31;
+        }
+        uint32_t a = h[0], bb = h[1], c = h[2], d = h[3], e = h[4];
+        for (int i = 0; i < 80; ++i) {
+            uint32_t f = i < 20 ? (bb & c) | (~bb & d) : i < 40 ? bb ^ c ^ d : i < 60 ? (bb & c) | (bb & d) | (c & d) : bb ^ c ^ d;
+            uint32_t k = i < 20 ? 0x5a827999 : i < 40 ? 0x6ed9eba1 : i < 60 ? 0x8f1bbcdc : 0xca62c1d6;
+            uint32_t t = (a << 5 | a >> 27) + f + e + k + w[i];
+            e = d, d = c, c = bb << 30 | bb >> 2, bb = a, a = t;
+        }
+        h[0] += a, h[1] += bb, h[2] += c, h[3] += d, h[4] += e;
+    }
+    for (int i = 0; i < 20; ++i) out[i] = (unsigned char)(h[i / 4] >> (24 - 8 * (i % 4)));
+}
+static void nidEncode(const char *name, char nid[12]) {
+    static const unsigned char suffix[16] = {0x51, 0x8d, 0x64, 0xa6, 0x35, 0xde, 0xd8, 0xc1, 0xe6, 0xb0, 0x39, 0xb1, 0xc3, 0xe5, 0x52, 0x30};
+    unsigned char input[256 + 16], digest[20], bytes[8];
+    size_t length = strlen(name) > 256 ? 256 : strlen(name);
+    memcpy(input, name, length);
+    memcpy(input + length, suffix, 16);
+    sha1(input, length + 16, digest);
+    for (int i = 0; i < 8; ++i) bytes[i] = digest[7 - i];
+    static const char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-";
+    uint64_t value = 0;
+    for (int i = 0; i < 8; ++i) value = value << 8 | bytes[i];
+    // 64 bits -> 11 characters (the last one carries 4 bits, shifted as base64 does)
+    for (int i = 0; i < 10; ++i) nid[i] = alphabet[(value >> (58 - 6 * i)) & 63];
+    nid[10] = alphabet[(value & 15) << 2];
+    nid[11] = 0;
+}
 static void *symbol(int module, const char *name) {
     void *address = NULL;
-    if (module < 0 || sceKernelDlsym(module, name, &address)) {
-        say("sys symbol %s: not found", name);
-        return NULL;
-    }
-    return address;
+    if (module < 0) return NULL;
+    int rc = sceKernelDlsym(module, name, &address);
+    if (!rc && address) return address;
+    char nid[12];
+    nidEncode(name, nid);
+    int rc_nid = sceKernelDlsym(module, nid, &address);
+    say("sys symbol %s: by name 0x%x, by NID %s 0x%x -> %p", name, rc, nid, rc_nid, rc_nid ? NULL : address);
+    return rc_nid ? NULL : address;
 }
 static int ssl_module = -1, http_module = -1, audio_module = -1;
 static void checkModules(void) {

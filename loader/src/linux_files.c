@@ -146,6 +146,7 @@ static int nativeStat(const char *path, bool follow, LinuxFileStat *output) {
     int error = 0, saved = errno;
     struct stat native;
     int result = follow ? stat(path, &native) : lstat(path, &native);
+    if (result && !follow && (errno == EPERM || errno == ENOSYS)) result = stat(path, &native);  // PS5 titles: lstat is refused (EPERM)
     done("stat", result, saved, &error);
     return error ? error : convert(&native, output);
 }

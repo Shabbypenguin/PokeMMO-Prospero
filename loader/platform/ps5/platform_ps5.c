@@ -279,7 +279,8 @@ unsigned platformCpuCount(void) {
 // The kernel's records (FreeBSD 11 layout): d_fileno (4), d_reclen (2), d_type (1), d_namlen (1), d_name.
 struct PlatformDirectory {
     int fd;          // -1: listing comes from an index file
-    char buffer[8192];
+    char *path;
+    char buffer[65536];  // loader-1: an 8 KiB buffer gave EINVAL on /app0 (PFS); 64 KiB is the largest block size there
     int filled, offset;
     char *index;     // index file contents ("name" or "name/" per line)
     size_t index_offset;
@@ -304,11 +305,13 @@ PlatformDirectory *platformDirectoryOpen(const char *path, int *error) {
         *error = ENOMEM;
         return NULL;
     }
+    directory->path = strdup(path);
     directory->fd = open(path, O_RDONLY | O_DIRECTORY);
     if (directory->fd >= 0) return directory;
     int open_error = errno;
     directory->index = readIndex(path);
     if (directory->index) return directory;
+    free(directory->path);
     free(directory);
     *error = open_error;
     return NULL;
@@ -334,7 +337,17 @@ int platformDirectoryRead(PlatformDirectory *directory, char name[256], uint8_t 
         if (directory->offset >= directory->filled) {
             int got = getdents(directory->fd, directory->buffer, (int)sizeof(directory->buffer));
             if (got < 0) {
+                long base = 0;
+                got = getdirentries(directory->fd, directory->buffer, (int)sizeof(directory->buffer), &base);
+            }
+            if (got < 0) {
                 *error = errno;
+                // Neither works on this file system: switch to the installer's index file, if there is one.
+                if (!directory->offset && !directory->filled && (directory->index = readIndex(directory->path))) {
+                    close(directory->fd);
+                    directory->fd = -1;
+                    return platformDirectoryRead(directory, name, type, inode, error);
+                }
                 return -1;
             }
             if (got == 0) return 0;
@@ -365,6 +378,7 @@ void platformDirectoryClose(PlatformDirectory *directory) {
     if (!directory) return;
     if (directory->fd >= 0) close(directory->fd);
     free(directory->index);
+    free(directory->path);
     free(directory);
 }
 
