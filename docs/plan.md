@@ -166,6 +166,18 @@ are probed: `fs.dataroms` (read a `/data` folder directly) and `fs.usb` (in-app 
 - **Network:** UDP works (the log arrived). `getaddrinfo` crashed the title three times: in titles it comes from
   `libScePosixForWebKit`. probe-3 resolves with the console's `sceNetResolver`; the loader will do the same.
 
+### loader-1 findings (12.40)
+
+- The client ran on the console: GraalVM start-up, logging, config read and saved; it stopped when LWJGL could not
+  unpack its native library because `lstat` is refused in titles (fixed in loader-2: falls back to `stat`).
+- **`/app0` is writable and writes reach `/data/homebrew/<ID>/`** (the test file appeared over FTP). The client,
+  its caches and logs can therefore live in the title folder, where FTP and the installer see them; `/download0`
+  (a storage image, `download.dat`) may not be needed at all. To decide in Phase 5.
+- `/download0` took 2 GiB of writes (43 MiB/s); `getdents` works there but returned EINVAL on `/app0`.
+- System modules load at run time by bare name (`libSceSsl`, `libSceHttp`, `libSceAudioOut`) and the system
+  keyboard (`libSceImeDialog`) from `/<sandbox word>/common/lib/`; looking symbols up by name failed (loader-2
+  retries by NID).
+
 ### probe-3 findings (12.40)
 
 - **Heap route found.** `sceKernelReserveVirtualRange` reserves 1, 4 and 16 GiB (32 GiB: `0x8002000c`). Direct
