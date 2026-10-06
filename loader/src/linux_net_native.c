@@ -91,6 +91,12 @@ static void fromNative(const struct sockaddr_in *native, BsdSockaddrIn *address)
 }
 // Socket option values: integers and timeouts have the same meaning; struct timeval and struct linger are 16 and 8 bytes on both.
 
+enum { EMULATED_HANDLES = 4096 };
+static atomic_bool emulated[EMULATED_HANDLES];
+static bool isEmulated(int handle) { return handle >= 0 && handle < EMULATED_HANDLES && atomic_load(&emulated[handle]); }
+static void setEmulated(int handle, bool enable) {
+    if (handle >= 0 && handle < EMULATED_HANDLES) atomic_store(&emulated[handle], enable);
+}
 int linuxNetNativeSocket(int type, int protocol, int *error) {
     int native_type = type == BSD_SOCK_DGRAM ? SOCK_DGRAM : SOCK_STREAM;
     int handle = socket(AF_INET, native_type, protocol);
@@ -103,25 +109,49 @@ int linuxNetNativeSocket(int type, int protocol, int *error) {
     return handle;
 }
 int linuxNetNativeClose(int handle) {
+    setEmulated(handle, false);
     int result = close(handle);
     trace("net.close handle=%d result=%d", handle, result);
     return result;
 }
-// loader-5: on the PS5, fcntl(F_SETFL) on a socket is refused (EACCES); the FIONBIO ioctl is the socket's own switch.
+// On the PS5 (12.40) a title may not switch its sockets to non-blocking: fcntl(F_SETFL) and FIONBIO both fail with EACCES.
+// When every native switch is refused, the mode is emulated per handle: the socket stays blocking, and each call that could
+// block (send, recv, accept) first polls it with a zero timeout and reports EAGAIN when it is not ready; connect completes
+// synchronously, which Java accepts (a 0 result means connected, no EINPROGRESS round trip).
+#ifndef SO_NBIO
+#define SO_NBIO 0x1200  // the PS4/PS5 socket option for non-blocking mode
+#endif
 int linuxNetNativeSetNonblocking(int handle, bool enable, int *error) {
     int on = enable ? 1 : 0;
-    if (!ioctl(handle, FIONBIO, &on)) return 0;
+    if (!ioctl(handle, FIONBIO, &on)) return setEmulated(handle, false), 0;
+    int ioctl_errno = errno;
+    if (!setsockopt(handle, SOL_SOCKET, SO_NBIO, &on, sizeof(on))) return setEmulated(handle, false), 0;
+    int nbio_errno = errno;
     int flags = fcntl(handle, F_GETFL, 0);
-    if (flags < 0) return failure("fcntl_get", error);
-    flags = enable ? (flags | O_NONBLOCK) : (flags & ~O_NONBLOCK);
-    return fcntl(handle, F_SETFL, flags) < 0 ? failure("fcntl_set", error) : 0;
+    if (flags >= 0) {
+        flags = enable ? (flags | O_NONBLOCK) : (flags & ~O_NONBLOCK);
+        if (!fcntl(handle, F_SETFL, flags)) return setEmulated(handle, false), 0;
+    }
+    trace("net.nonblock handle=%d enable=%d emulated fionbio_errno=%d so_nbio_errno=%d fcntl_errno=%d", handle, enable, ioctl_errno, nbio_errno, errno);
+    if (handle < 0 || handle >= EMULATED_HANDLES) return failure("nonblock", error);
+    setEmulated(handle, enable);
+    return 0;
+}
+// For an emulated non-blocking handle: true when the call may proceed without blocking, else *error is EAGAIN.
+static bool readyOrAgain(int handle, short events, int *error) {
+    if (!isEmulated(handle)) return true;
+    struct pollfd entry = {.fd = handle, .events = events, .revents = 0};
+    int ready = poll(&entry, 1, 0);
+    if (ready != 0) return true;  // ready, or an error the real call will report
+    *error = LINUX_EAGAIN;
+    return false;
 }
 int linuxNetNativeConnect(int handle, const BsdSockaddrIn *address, int *error) {
     struct sockaddr_in native = toNative(address);
     int result = connect(handle, (const struct sockaddr *)&native, sizeof(native));
     uint32_t host = __builtin_bswap32(address->address);
-    trace("net.connect handle=%d address=%u.%u.%u.%u port=%u result=%d native_errno=%d", handle, host >> 24, (host >> 16) & 255, (host >> 8) & 255, host & 255,
-          (unsigned)__builtin_bswap16(address->port), result, result < 0 ? errno : 0);
+    trace("net.connect handle=%d address=%u.%u.%u.%u port=%u result=%d native_errno=%d emulated=%d", handle, host >> 24, (host >> 16) & 255, (host >> 8) & 255,
+          host & 255, (unsigned)__builtin_bswap16(address->port), result, result < 0 ? errno : 0, isEmulated(handle));
     return result < 0 ? failure("connect", error) : 0;
 }
 int linuxNetNativeBind(int handle, const BsdSockaddrIn *address, int *error) {
@@ -132,6 +162,7 @@ int linuxNetNativeListen(int handle, int backlog, int *error) { return listen(ha
 int linuxNetNativeAccept(int handle, BsdSockaddrIn *address, int *error) {
     struct sockaddr_in native;
     socklen_t length = sizeof(native);
+    if (!readyOrAgain(handle, POLLIN, error)) return -1;
     int accepted = accept(handle, (struct sockaddr *)&native, &length);
     if (accepted < 0) return failure("accept", error);
     fromNative(&native, address);
@@ -181,7 +212,8 @@ int linuxNetNativeGetsockopt(int handle, int level, int name, void *value, unsig
 }
 int linuxNetNativeShutdown(int handle, int how, int *error) { return shutdown(handle, how) < 0 ? failure("shutdown", error) : 0; }
 int64_t linuxNetNativeSend(int handle, const void *buffer, size_t count, int flags, const BsdSockaddrIn *to, int *error) {
-    int native_flags = nativeMessageFlags(flags);
+    if (!readyOrAgain(handle, POLLOUT, error)) return -1;
+    int native_flags = nativeMessageFlags(flags) | (isEmulated(handle) ? MSG_DONTWAIT : 0);
     ssize_t result;
     if (to) {
         struct sockaddr_in native = toNative(to);
@@ -191,7 +223,8 @@ int64_t linuxNetNativeSend(int handle, const void *buffer, size_t count, int fla
     return result < 0 ? failure("send", error) : (int64_t)result;
 }
 int64_t linuxNetNativeRecv(int handle, void *buffer, size_t count, int flags, BsdSockaddrIn *from, int *error) {
-    int native_flags = nativeMessageFlags(flags);
+    if (!(flags & BSD_MSG_DONTWAIT) && !readyOrAgain(handle, POLLIN, error)) return -1;
+    int native_flags = nativeMessageFlags(flags) | (isEmulated(handle) ? MSG_DONTWAIT : 0);
     ssize_t result;
     if (from) {
         struct sockaddr_in native;
