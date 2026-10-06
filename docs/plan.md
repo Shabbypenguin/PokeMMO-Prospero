@@ -82,8 +82,14 @@ to update. Updates are **on by default**, with a button to skip.
    (A/B) in `/download0`; "current" moves only after verification. A version that fails to load falls back to the
    previous one, with the reason on screen.
 
-Open: whether the client's own updater (data feeds) runs on Linux and touches its binary; the loader must
-intercept any attempt to replace or re-exec itself.
+The client has its own updater (revision 32920 strings: `-updater_feeds:`, `-updater_sigs:`, `--update`,
+`updater.tmp`, "Newly downloaded updater.tmp failed SHA256 check", "Error attempting auto restart"). It downloads a
+signed updater and then needs to start a new process (`ProcessBuilder` → `posix_spawn`/`vfork`/`execve`). Neither
+console can start a second process from a title, and PokeMMO-NX refuses those calls (unimplemented imports are bound
+to traps that return an error), so on the Switch the built-in updater cannot finish; PokeMMO-NX instead ships a fixed
+client revision. Our loader will do the same refusal, log the attempt, and show "update downloaded: restart the
+title", while the pre-launch updater above keeps the client current. Unknown until the client runs: whether
+data-only updates apply in-process without a restart.
 
 ## Phase 6 — packaging
 
