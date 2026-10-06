@@ -34,7 +34,7 @@
 #include <sys/ucontext.h>
 #include <unistd.h>
 
-#define LOADER_MILESTONE "loader-3"
+#define LOADER_MILESTONE "loader-4"
 // ps5-opengl's app heap (malloc of the loader and of everything the client allocates with malloc): from direct memory.
 const size_t ps5_opengl_heap_size = 768u << 20;
 
@@ -416,43 +416,24 @@ static void checkHttps(void) {
     if (!runWithLimit(httpsBody, 30, "net.https")) mark("net.https", FAIL);
 }
 
-// ---- audio: half a second of a quiet 440 Hz tone ------------------------------------------------------------------------------------
+// ---- audio: half a second of a quiet 440 Hz tone through the directly linked audio output (loader-4) ------------------------------
 static void audioBody(void) {
-    int (*init)(void) = symbol(audio_module, "sceAudioOutInit");
-    int (*openPort)(int, int, int, unsigned, unsigned, unsigned) = symbol(audio_module, "sceAudioOutOpen");
-    int (*output)(int, const void *) = symbol(audio_module, "sceAudioOutOutput");
-    int (*closePort)(int) = symbol(audio_module, "sceAudioOutClose");
-    if (!init || !openPort || !output) {
-        mark("audio.tone", FAIL);
-        return;
-    }
-    int user = -1, faulted = 0, rc_init = -1, port = -1, played = 0;
-    sceUserServiceInitialize(NULL);
-    sceUserServiceGetInitialUser(&user);
     static int16_t samples[256 * 2];
-    GUARDED(faulted, {
-        rc_init = init();
-        port = openPort(user, 0 /* main */, 0, 256, 48000, 1 /* S16 stereo */);
-        for (int frame = 0; port >= 0 && frame < 94; ++frame) {  // 94 x 256 samples = 0.5 s
-            for (int i = 0; i < 256; ++i) {
-                double t = (double)(frame * 256 + i) / 48000.0;
-                int16_t value = (int16_t)(sin(2 * 3.14159265358979 * 440.0 * t) * 3000);
-                samples[2 * i] = samples[2 * i + 1] = value;
-            }
-            if (output(port, samples) < 0) break;
-            ++played;
+    int handle = platformAudioOpen(256), played = 0;
+    for (int frame = 0; handle >= 0 && frame < 94; ++frame) {  // 94 x 256 samples = 0.5 s
+        for (int i = 0; i < 256; ++i) {
+            double t = (double)(frame * 256 + i) / 48000.0;
+            samples[2 * i] = samples[2 * i + 1] = (int16_t)(sin(2 * 3.14159265358979 * 440.0 * t) * 3000);
         }
-        if (port >= 0 && closePort) closePort(port);
-    });
-    say("audio tone: user=0x%x init=0x%x port=0x%x frames=%d%s", user, rc_init, port, played, faulted ? " FAULTED" : "");
-    mark("audio.tone", !faulted && played == 94 ? PASS : FAIL);
+        if (platformAudioWrite(handle, samples) < 0) break;
+        ++played;
+    }
+    if (handle >= 0) platformAudioClose(handle);
+    say("audio tone: handle=0x%x frames=%d (you should have heard a short beep)", handle, played);
+    mark("audio.tone", played == 94 ? PASS : FAIL);
 }
 static void checkAudio(void) {
     mark("audio.tone", RUNNING);
-    if (audio_module < 0) {
-        mark("audio.tone", FAIL);
-        return;
-    }
     if (!runWithLimit(audioBody, 10, "audio.tone")) mark("audio.tone", FAIL);
 }
 

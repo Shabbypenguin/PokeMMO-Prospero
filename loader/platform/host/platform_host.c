@@ -174,3 +174,14 @@ bool platformPadRead(PlatformPad *pad) {
     *pad = (PlatformPad){0};
     return false;
 }
+
+int platformAudioOpen(unsigned frames) {
+    (void)frames;
+    return -1;
+}
+int platformAudioWrite(int handle, const int16_t *interleaved) {
+    (void)handle;
+    (void)interleaved;
+    return -1;
+}
+void platformAudioClose(int handle) { (void)handle; }

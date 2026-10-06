@@ -78,5 +78,12 @@ typedef struct {
 } PlatformPad;
 bool platformPadRead(PlatformPad *pad);  // false when no controller can be read
 
+// ---- audio ---------------------------------------------------------------------------------------------------------------------
+// 48 kHz stereo 16-bit output in blocks of `frames` (a multiple of 256). platformAudioWrite blocks until the block is queued, which
+// paces the caller. Open returns a handle >= 0, or a negative error.
+int platformAudioOpen(unsigned frames);
+int platformAudioWrite(int handle, const int16_t *interleaved);
+void platformAudioClose(int handle);
+
 // ---- end ----------------------------------------------------------------------------------------------------------------------
 void platformFatal(const char *message) __attribute__((noreturn));

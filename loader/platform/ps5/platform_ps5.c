@@ -446,6 +446,28 @@ bool platformPadRead(PlatformPad *pad) {
     return true;
 }
 
+// ---- audio ------------------------------------------------------------------------------------------------------------------------
+// Linked directly (loader-4): loader-2 showed libSceAudioOut loads at run time but its functions cannot be looked up from a title.
+int sceAudioOutInit(void);
+int sceAudioOutOpen(int user, int type, int index, unsigned frames, unsigned frequency, unsigned format);
+int sceAudioOutOutput(int handle, const void *data);
+int sceAudioOutClose(int handle);
+int platformAudioOpen(unsigned frames) {
+    static pthread_once_t once = PTHREAD_ONCE_INIT;
+    static int init_rc;
+    pthread_once(&pad_once, padOpen);  // the user service is initialized there
+    pthread_once(&once, (void (*)(void))sceAudioOutInit);
+    int user = -1;
+    sceUserServiceGetInitialUser(&user);
+    int handle = sceAudioOutOpen(user, 0 /* main */, 0, frames, 48000, 1 /* S16 stereo */);
+    char line[120];
+    snprintf(line, sizeof(line), "audio open user=%d frames=%u handle=0x%x init=0x%x", user, frames, handle, init_rc);
+    platformLogLine(line);
+    return handle;
+}
+int platformAudioWrite(int handle, const int16_t *interleaved) { return sceAudioOutOutput(handle, interleaved); }
+void platformAudioClose(int handle) { sceAudioOutClose(handle); }
+
 // ---- end ----------------------------------------------------------------------------------------------------------------------
 void platformFatal(const char *message) {
     char line[512];
