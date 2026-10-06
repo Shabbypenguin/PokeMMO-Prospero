@@ -306,7 +306,11 @@ static const Binding bindings[] = {
     BIND("readdir64_r", linuxExtraRefuseNosys), BIND("posix_memalign", linuxExtraPosixMemalign), BIND("memalign", linuxExtraMemalign),
     BIND("malloc_usable_size", linuxExtraMallocUsableSize), BIND("posix_fadvise64", linuxExtraZero), BIND("posix_fadvise", linuxExtraZero),
     BIND("isatty", linuxExtraIsatty), BIND("__sched_cpucount", linuxProcessCpuCount), BIND("statvfs64", linuxExtraRefuseNosys),
-    BIND("fstatvfs64", linuxExtraRefuseNosys), BIND("fstatvfs", linuxExtraRefuseNosys)};
+    BIND("fstatvfs64", linuxExtraRefuseNosys), BIND("fstatvfs", linuxExtraRefuseNosys),
+    // glibc 2.38+ names (C23 versions of the strto* family) and fortified variants used by Ubuntu 24.04's libstdc++
+    BIND("__isoc23_strtol", linuxAbiStrtol), BIND("__isoc23_strtoll", linuxAbiStrtol), BIND("__isoc23_strtoul", linuxAbiStrtoull),
+    BIND("__isoc23_strtoull", linuxAbiStrtoull), BIND("__isoc23_sscanf", sscanf), BIND("__isoc23_vsscanf", vsscanf),
+    BIND("__read_chk", linuxExtraReadChk), BIND("__openat_2", linuxExtraOpenat2), BIND("writev", linuxExtraWritev)};
 #define BINDO(name, object) {name, (uintptr_t)&(object), "GLIBC_2.2.5", "libc.so.6"}
 #define BINDOL(name, object, library) {name, (uintptr_t)&(object), "GLIBC_2.2.5", library}
 // environ/__environ are the address of one pointer object; __stack_chk_guard is a value object

@@ -457,12 +457,17 @@ int platformAudioOpen(unsigned frames) {
     static int init_rc;
     pthread_once(&pad_once, padOpen);  // the user service is initialized there
     pthread_once(&once, (void (*)(void))sceAudioOutInit);
+    // loader-4: the logged-in user's id gave 0x80260011. The system user (255) is what PS4/PS5 homebrew passes for the main port.
     int user = -1;
     sceUserServiceGetInitialUser(&user);
-    int handle = sceAudioOutOpen(user, 0 /* main */, 0, frames, 48000, 1 /* S16 stereo */);
-    char line[120];
-    snprintf(line, sizeof(line), "audio open user=%d frames=%u handle=0x%x init=0x%x", user, frames, handle, init_rc);
-    platformLogLine(line);
+    const int users[2] = {255, user};
+    int handle = -1;
+    for (int i = 0; i < 2 && handle < 0; ++i) {
+        handle = sceAudioOutOpen(users[i], 0 /* main */, 0, frames, 48000, 1 /* S16 stereo */);
+        char line[120];
+        snprintf(line, sizeof(line), "audio open user=%d frames=%u handle=0x%x init=0x%x", users[i], frames, handle, init_rc);
+        platformLogLine(line);
+    }
     return handle;
 }
 int platformAudioWrite(int handle, const int16_t *interleaved) { return sceAudioOutOutput(handle, interleaved); }

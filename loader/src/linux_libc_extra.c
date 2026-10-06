@@ -732,3 +732,29 @@ int linuxExtraIsatty(int fd) {
     *linuxAbiErrnoLocation() = 25;  // ENOTTY
     return 0;
 }
+
+int64_t linuxExtraReadChk(int fd, void *buffer, size_t count, size_t object_size) {
+    (void)object_size;
+    return fd == 0 ? 0 : linuxAbiRead(fd, buffer, count);
+}
+int linuxExtraOpenat2(int directory, const char *path, int flags) { return linuxExtraOpenat(directory, path, flags); }
+int64_t linuxExtraWritev(int fd, const void *vectors, int count) {
+    typedef struct {
+        const void *base;
+        size_t length;
+    } Vector;
+    const Vector *items = vectors;
+    if (count < 0 || (count && !items)) {
+        *linuxAbiErrnoLocation() = LINUX_EINVAL;
+        return -1;
+    }
+    int64_t total = 0;
+    for (int i = 0; i < count; ++i) {
+        if (!items[i].length) continue;
+        int64_t written = fd == 1 || fd == 2 ? linuxStdioWriteConsoleFd(fd, items[i].base, items[i].length) : linuxAbiWrite(fd, items[i].base, items[i].length);
+        if (written < 0) return total ? total : -1;
+        total += written;
+        if ((size_t)written < items[i].length) break;
+    }
+    return total;
+}

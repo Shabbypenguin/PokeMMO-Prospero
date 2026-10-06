@@ -142,6 +142,9 @@ int linuxExtraPosixMemalign(void **memory, size_t alignment, size_t bytes);  // 
 void *linuxExtraMemalign(size_t alignment, size_t bytes);
 size_t linuxExtraMallocUsableSize(void *memory);
 int linuxExtraIsatty(int fd);  // never a terminal
+int64_t linuxExtraReadChk(int fd, void *buffer, size_t count, size_t object_size);
+int linuxExtraOpenat2(int directory, const char *path, int flags);
+int64_t linuxExtraWritev(int fd, const void *vectors, int count);  // struct iovec array
 
 // ---- file system aliases and explicit refusals --------------------------------------------------------------------------
 int linuxExtraStat(const char *path, void *output);

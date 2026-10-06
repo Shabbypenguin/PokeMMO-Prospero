@@ -34,7 +34,7 @@
 #include <sys/ucontext.h>
 #include <unistd.h>
 
-#define LOADER_MILESTONE "loader-4"
+#define LOADER_MILESTONE "loader-5"
 // ps5-opengl's app heap (malloc of the loader and of everything the client allocates with malloc): from direct memory.
 const size_t ps5_opengl_heap_size = 768u << 20;
 
@@ -576,8 +576,9 @@ static void *gameThread(void *argument) {
     static const char *const options[] = {"-XX:MaxHeapSize=640m", "-XX:MaxNewSize=128m", NULL};
     GameConfig config = {.root = ROOT,
                          .client_path = GAME "/bin/linux/x64/PokeMMO",
-                         .mounts = {{"/game/roms", "/app0/roms"}},
-                         .mount_count = 1,
+                         // The C++ runtime the client's native libraries need (libstdc++, libgcc_s) ships with the title.
+                         .mounts = {{"/game/roms", "/app0/roms"}, {"/lib", "/app0/assets/lib"}},
+                         .mount_count = 2,
                          .arguments = options,
                          .timeout_seconds = 0,
                          .virtual_libraries = virtual_libraries,
