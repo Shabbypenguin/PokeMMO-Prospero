@@ -61,5 +61,22 @@ void platformDirectoryClose(PlatformDirectory *directory);
 // Name to IPv4 address (network order). 0, or a negative glibc EAI_* value.
 int platformResolveIPv4(const char *name, uint32_t *address);
 
+// ---- controller ---------------------------------------------------------------------------------------------------------------
+// The first user's controller. Button bits are the PS5 pad library's (probe-3); sticks and triggers 0..255, sticks centred at 128.
+enum {
+    PLATFORM_PAD_L3 = 0x2, PLATFORM_PAD_R3 = 0x4, PLATFORM_PAD_OPTIONS = 0x8, PLATFORM_PAD_UP = 0x10, PLATFORM_PAD_RIGHT = 0x20,
+    PLATFORM_PAD_DOWN = 0x40, PLATFORM_PAD_LEFT = 0x80, PLATFORM_PAD_L2 = 0x100, PLATFORM_PAD_R2 = 0x200, PLATFORM_PAD_L1 = 0x400,
+    PLATFORM_PAD_R1 = 0x800, PLATFORM_PAD_TRIANGLE = 0x1000, PLATFORM_PAD_CIRCLE = 0x2000, PLATFORM_PAD_CROSS = 0x4000,
+    PLATFORM_PAD_SQUARE = 0x8000, PLATFORM_PAD_TOUCHPAD = 0x100000
+};
+typedef struct {
+    bool connected;
+    uint32_t buttons;
+    uint8_t lx, ly, rx, ry, l2, r2;
+    unsigned touches;
+    uint16_t touch_x, touch_y;  // first touch, about 0..1919 x 0..1079
+} PlatformPad;
+bool platformPadRead(PlatformPad *pad);  // false when no controller can be read
+
 // ---- end ----------------------------------------------------------------------------------------------------------------------
 void platformFatal(const char *message) __attribute__((noreturn));

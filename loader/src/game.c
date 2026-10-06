@@ -3,7 +3,7 @@
 // Copyright (c) Petit_Prince, MIT license (LICENSES/PokeMMO-NX-MIT.txt). PS5 changes: PokeMMO-Prospero contributors.
 // Changes: platform-neutral (folders, mounts and arguments come from the caller); the Switch's applet loop, docking, watchdog
 // register dumps and process-exit sequence are not carried over. The virtual SDL3/EGL/OpenAL/GTK libraries come in a later
-// milestone: until then the client loads the real ones it carries, and the run ends where they need a display.
+// milestone on a PC: there the client loads the real ones it carries, and the run ends where they need a display.
 #include "game.h"
 #include "diagnostics.h"
 #include "elf_executable.h"
@@ -139,7 +139,7 @@ bool gameRun(const GameConfig *config) {
         if (!*failure) failure = "The PokeMMO client cannot be read (missing, corrupted or not enough memory).";
         return false;
     }
-    linuxDlSetVirtualLibraries(NULL, 0);
+    linuxDlSetVirtualLibraries(config->virtual_libraries, config->virtual_count);
     linuxDlSetSearchDirectory("/lib");
     linuxDlSetFallbackResolver(linuxTrapResolve, NULL);
     linuxDlSetMainImage(&mapped);

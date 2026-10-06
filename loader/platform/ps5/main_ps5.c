@@ -10,6 +10,9 @@
 // thread with a time limit.
 #include "diagnostics.h"
 #include "game.h"
+#include "linux_audio.h"
+#include "linux_gtk.h"
+#include "linux_sdl.h"
 #include "platform.h"
 #include "prospero_version.h"  // PROSPERO_VERSION, PROSPERO_TITLE_ID (generated at build time)
 #include <EGL/egl.h>
@@ -31,7 +34,7 @@
 #include <sys/ucontext.h>
 #include <unistd.h>
 
-#define LOADER_MILESTONE "loader-2"
+#define LOADER_MILESTONE "loader-3"
 // ps5-opengl's app heap (malloc of the loader and of everything the client allocates with malloc): from direct memory.
 const size_t ps5_opengl_heap_size = 768u << 20;
 
@@ -574,9 +577,20 @@ static bool installClient(void) {
 }
 
 // ---- the client run -----------------------------------------------------------------------------------------------------------------
-static _Atomic bool game_finished;
+static _Atomic bool game_finished, release_screen;
+static _Atomic bool screen_released;
 static void *gameThread(void *argument) {
     (void)argument;
+    // This project's SDL3, EGL/GLX, OpenAL and GTK (the file chooser), adapted from PokeMMO-NX.
+    static LinuxVirtualLibrary virtual_libraries[8];
+    virtual_libraries[0] = linuxSdlLibrary;
+    virtual_libraries[1] = linuxEglLibrary;
+    virtual_libraries[2] = linuxOpenAlLibrary;
+    virtual_libraries[3] = linuxGlxLibrary;
+    for (unsigned i = 0; i < 4; ++i) virtual_libraries[4 + i] = linuxGtkLibraries[i];
+    linuxAudioOutAttach();
+    // The status screen gives the display to the game: ps5-opengl has one window surface.
+    while (!atomic_load(&screen_released)) sceKernelUsleep(10000);
     mark("client.map", RUNNING);
     static const char *const options[] = {"-XX:MaxHeapSize=640m", "-XX:MaxNewSize=128m", NULL};
     GameConfig config = {.root = ROOT,
@@ -584,7 +598,9 @@ static void *gameThread(void *argument) {
                          .mounts = {{"/game/roms", "/app0/roms"}},
                          .mount_count = 1,
                          .arguments = options,
-                         .timeout_seconds = 0};
+                         .timeout_seconds = 0,
+                         .virtual_libraries = virtual_libraries,
+                         .virtual_count = 8};
     mkdir(ROOT, 0755);
     bool ok = gameRun(&config);
     say("client: %s%s", ok ? "ended normally" : "ended: ", ok ? "" : gameFailure());
@@ -598,6 +614,7 @@ static void *gameThread(void *argument) {
 // ---- screen ---------------------------------------------------------------------------------------------------------------------
 static EGLDisplay display = EGL_NO_DISPLAY;
 static EGLSurface surface = EGL_NO_SURFACE;
+static EGLContext screen_context = EGL_NO_CONTEXT;
 static EGLint width, height;
 static bool screenOpen(void) {
     static const EGLint config_attributes[] = {EGL_SURFACE_TYPE, EGL_WINDOW_BIT, EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT, EGL_RED_SIZE, 8,
@@ -609,8 +626,8 @@ static bool screenOpen(void) {
         !eglChooseConfig(display, config_attributes, &config, 1, &count) || count != 1)
         return false;
     surface = eglCreateWindowSurface(display, config, (EGLNativeWindowType)0, NULL);
-    EGLContext context = eglCreateContext(display, config, EGL_NO_CONTEXT, NULL);
-    if (surface == EGL_NO_SURFACE || context == EGL_NO_CONTEXT || !eglMakeCurrent(display, surface, surface, context)) return false;
+    screen_context = eglCreateContext(display, config, EGL_NO_CONTEXT, NULL);
+    if (surface == EGL_NO_SURFACE || screen_context == EGL_NO_CONTEXT || !eglMakeCurrent(display, surface, surface, screen_context)) return false;
     eglQuerySurface(display, surface, EGL_WIDTH, &width);
     eglQuerySurface(display, surface, EGL_HEIGHT, &height);
     return true;
@@ -654,6 +671,7 @@ static void *workMain(void *argument) {
     checkHttps();
     checkAudio();
     if (installClient()) {
+        atomic_store(&release_screen, true);
         pthread_t game;
         pthread_attr_t attributes;
         pthread_attr_init(&attributes);
@@ -679,6 +697,16 @@ int main(void) {
     pthread_attr_destroy(&attributes);
     bool reported = false;
     for (unsigned frame = 1;; ++frame) {
+        if (atomic_load(&release_screen) && !atomic_load(&screen_released)) {
+            if (screen) {
+                eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+                eglDestroyContext(display, screen_context);
+                eglDestroySurface(display, surface);  // the display stays initialized: the client's SDL initializes it again
+                screen = false;
+                say("screen: handed to the client");
+            }
+            atomic_store(&screen_released, true);
+        }
         if (screen) {
             drawSteps(frame);
             eglSwapBuffers(display, surface);

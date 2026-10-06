@@ -169,3 +169,8 @@ void platformFatal(const char *message) {
     platformLogLine(line);
     abort();
 }
+
+bool platformPadRead(PlatformPad *pad) {
+    *pad = (PlatformPad){0};
+    return false;
+}

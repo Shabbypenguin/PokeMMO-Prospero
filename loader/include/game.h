@@ -3,6 +3,7 @@
 // Copyright (c) Petit_Prince, MIT license (LICENSES/PokeMMO-NX-MIT.txt). PS5 changes: PokeMMO-Prospero contributors.
 // Changes: the platform passes the folders and arguments; no Switch applet handling.
 #pragma once
+#include "linux_dl.h"
 #include <stdbool.h>
 
 typedef struct {
@@ -14,6 +15,8 @@ typedef struct {
     unsigned mount_count;
     const char *const *arguments;  // the client's argv after the program name (JVM options), NULL-terminated
     unsigned timeout_seconds;      // 0: wait for ever
+    const LinuxVirtualLibrary *virtual_libraries;  // SDL3, EGL, GLX, OpenAL, GTK (PS5); none on a PC
+    unsigned virtual_count;
 } GameConfig;
 
 // Runs the official PokeMMO client (its `main`) inside the adapters and waits for it. True when main returned 0 or exit(0) was called.

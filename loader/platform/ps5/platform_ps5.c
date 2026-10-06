@@ -19,6 +19,7 @@
 #include <pthread_np.h>
 #include <sched.h>
 #include <stdarg.h>
+#include <stddef.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -400,6 +401,49 @@ int platformResolveIPv4(const char *name, uint32_t *address) {
     if (rc || !result.s_addr) return LINUX_EAI_NONAME;
     *address = result.s_addr;
     return 0;
+}
+
+// ---- controller -------------------------------------------------------------------------------------------------------------------
+int sceUserServiceInitialize(void *parameters);
+int sceUserServiceGetInitialUser(int *user);
+int scePadInit(void);
+int scePadOpen(int user, int type, int index, const void *parameters);
+int scePadReadState(int handle, void *data);
+typedef struct __attribute__((aligned(8))) {
+    uint32_t buttons;
+    uint8_t lx, ly, rx, ry, l2, r2, pad0[2];
+    float orientation[4], acceleration[3], angular[3];
+    uint8_t touch_count, touch_pad[7];
+    struct {
+        uint16_t x, y;
+        uint8_t id, reserved[3];
+    } touch[2];
+    int32_t connected;
+    uint8_t rest[40];
+} PadData;  // the pad library's 120-byte record (probe-3)
+_Static_assert(sizeof(PadData) == 120 && offsetof(PadData, connected) == 0x4c, "pad record");
+static pthread_once_t pad_once = PTHREAD_ONCE_INIT;
+static int pad_handle = -1;
+static void padOpen(void) {
+    int user = -1;
+    sceUserServiceInitialize(NULL);
+    int rc_user = sceUserServiceGetInitialUser(&user), rc_init = scePadInit();
+    pad_handle = rc_user == 0 && rc_init >= 0 ? scePadOpen(user, 0, 0, NULL) : -1;
+    char line[160];
+    snprintf(line, sizeof(line), "pad open user_rc=0x%x user=%d init=0x%x handle=0x%x", rc_user, user, rc_init, pad_handle);
+    platformLogLine(line);
+}
+bool platformPadRead(PlatformPad *pad) {
+    pthread_once(&pad_once, padOpen);
+    *pad = (PlatformPad){0};
+    PadData data;
+    if (pad_handle < 0 || scePadReadState(pad_handle, &data) < 0) return false;
+    pad->connected = data.connected != 0;
+    pad->buttons = data.buttons & 0x7fffffffu;
+    pad->lx = data.lx, pad->ly = data.ly, pad->rx = data.rx, pad->ry = data.ry, pad->l2 = data.l2, pad->r2 = data.r2;
+    pad->touches = data.touch_count > 2 ? 2 : data.touch_count;
+    if (pad->touches) pad->touch_x = data.touch[0].x, pad->touch_y = data.touch[0].y;
+    return true;
 }
 
 // ---- end ----------------------------------------------------------------------------------------------------------------------

@@ -49,6 +49,11 @@ keeps PokeMMO-NX's copyright notice in its header and lists what changed (detail
 
 The exact pinned versions live in the build environment repository (`pokemmo-ps5-buildenv`, `docker/Dockerfile`).
 
+## Fonts
+
+- The file chooser's bitmap font (`loader/src/picker_font.c`) is rendered from [DejaVu Sans Mono](https://dejavu-fonts.github.io/)
+  by `tools/make_picker_font.py` (DejaVu fonts license, derived from Bitstream Vera: free to embed and redistribute).
+
 ## Considered, not used
 
 - [ps5-vulkan](https://github.com/mpereiraesaa/ps5-vulkan) (mpereiraesaa) — evaluated as a graphics backend; ps5-opengl
