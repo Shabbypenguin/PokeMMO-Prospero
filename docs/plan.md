@@ -128,4 +128,20 @@ are probed: `fs.dataroms` (read a `/data` folder directly) and `fs.usb` (in-app 
 
 | Firmware | Console setup | Probe result | Date |
 |----------|---------------|--------------|------|
-| 12.40 | kstuff-lite | not run yet | — |
+| 12.40 | kstuff-lite 1.07+, ShadowMountPlus 1.7beta3 | probe-2: graphics, canary, threads, direct memory, storage pass; crashed in `getaddrinfo` (see below) | 2026-10-05 |
+
+### probe-2 findings (12.40)
+
+- **Graphics: everything passes.** ps5-opengl returns `4.6 (Compatibility Profile) Mesa 26.2.0` for the client's
+  GL 2.1 request; legacy GLSL 110/120/130, client-side arrays, VBOs without a VAO, blending and immediate mode all
+  render correctly.
+- **`%fs:0x28` is 0 on every thread and never changes**, so the client's 129 canary checks work without patching.
+- **Threads:** 8 MiB stacks and `pthread_attr_get_np` (for `pthread_getattr_np`) work; main thread stack 2 MiB.
+- **Memory:** anonymous `mmap` is limited to the flexible budget (418 MiB at start, 256 MiB committable) and even a
+  1 GiB `PROT_NONE` reservation fails (ENOMEM). Direct memory is large (11.7 GiB pool, 2 GiB mapped in the test).
+  The loader therefore backs GraalVM's heap with direct memory; probe-3 tests reserving the range with
+  `sceKernelReserveVirtualRange` and committing direct memory at fixed addresses inside it.
+- **Storage:** `/download0` works. `/data` is not visible inside the title (ENOENT) at least while
+  ShadowMountPlus's sandbox mounts are not applied; `/app0/roms` returned EPERM (probe-3 logs the sandbox view).
+- **Network:** UDP works (the log arrived). `getaddrinfo` crashed the title three times: in titles it comes from
+  `libScePosixForWebKit`. probe-3 resolves with the console's `sceNetResolver`; the loader will do the same.

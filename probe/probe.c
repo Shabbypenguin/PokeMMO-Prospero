@@ -65,6 +65,12 @@ int32_t sceKernelReleaseDirectMemory(int64_t physical_start, size_t length);
 int sceKernelLoadStartModule(const char *path, size_t argument_size, const void *arguments, uint32_t flags, void *options,
                              int *result);
 int sceKernelDlsym(int handle, const char *symbol, void **address);
+int sceKernelReserveVirtualRange(void **address, size_t length, int flags, size_t alignment);
+int sceNetInit(void);
+int sceNetPoolCreate(const char *name, int size, int flags);
+int sceNetResolverCreate(const char *name, int pool, int flags);
+int sceNetResolverStartNtoa(int resolver, const char *hostname, struct in_addr *address, int timeout, int retries, int flags);
+int sceNetResolverDestroy(int resolver);
 int sceUserServiceInitialize(void *parameters);
 int sceUserServiceGetInitialUser(int *user);
 int scePadInit(void);
@@ -72,7 +78,7 @@ int scePadOpen(int user, int type, int index, const void *parameters);
 
 
 #define PROBE_PORT 18194
-#define PROBE_VERSION "probe-2"
+#define PROBE_VERSION "probe-3"
 #include "prospero_version.h"  // PROSPERO_VERSION, PROSPERO_TITLE_ID (generated at build time)
 
 // ---- result tiles -----------------------------------------------------------------------------
@@ -85,9 +91,9 @@ static Check checks[] = {
     {"gl.context", NOT_RUN},  {"gl.compat", NOT_RUN},   {"gl.glsl110", NOT_RUN}, {"gl.glsl120", NOT_RUN},
     {"gl.glsl130", NOT_RUN},  {"gl.clientarr", NOT_RUN}, {"gl.vbo-novao", NOT_RUN}, {"gl.blend", NOT_RUN},
     {"gl.immediate", NOT_RUN}, {"tls.fs28", NOT_RUN},   {"thread.stack", NOT_RUN}, {"thread.getattr", NOT_RUN},
-    {"vm.reserve", NOT_RUN},  {"vm.fixed", NOT_RUN},    {"vm.commit", NOT_RUN},  {"vm.direct", NOT_RUN},  {"vm.directfixed", NOT_RUN}, {"fs.download0", NOT_RUN}, {"fs.app0roms", NOT_RUN},
+    {"vm.reserve", NOT_RUN},  {"vm.fixed", NOT_RUN},    {"vm.commit", NOT_RUN},  {"vm.direct", NOT_RUN},  {"vm.directfixed", NOT_RUN}, {"vm.vrange", NOT_RUN}, {"vm.vrangedirect", NOT_RUN}, {"fs.download0", NOT_RUN}, {"fs.app0roms", NOT_RUN},
     {"fs.dataroms", NOT_RUN}, {"fs.usb", NOT_RUN},
-    {"net.dns", NOT_RUN},     {"net.tcp", NOT_RUN},     {"exec.rwx", NOT_RUN},   {"exec.mprotect", NOT_RUN},
+    {"net.dns", NOT_RUN},     {"net.tcp", NOT_RUN},     {"net.getaddrinfo", NOT_RUN},     {"exec.rwx", NOT_RUN},   {"exec.mprotect", NOT_RUN},
     {"exec.jit", NOT_RUN},    {"input.pad", NOT_RUN},   {"input.ime", NOT_RUN},
 };
 #define CHECK_COUNT (sizeof(checks) / sizeof(*checks))
@@ -155,6 +161,77 @@ static void mark(const char *name, int state) {
         if (!strcmp(checks[i].name, name)) checks[i].state = state;
     say("RESULT %s %s", name, state == PASS ? "PASS" : state == FAIL ? "FAIL" : state == INFO ? "INFO" : "NOT_RUN");
 }
+
+// ---- crash resume ----------------------------------------------------------------------------------
+// Signal handlers don't catch every crash on this platform, so each risky group records its name in
+// /download0 before it runs. If the title dies, the next launch finds the name, marks that group's checks FAIL
+// ("crashed") and skips it, so one bad check can't hide every check after it. The record is per probe version.
+#define STATE_CURRENT "/download0/probe-current.txt"
+#define STATE_CRASHED "/download0/probe-crashed.txt"
+static char crashed_groups[1024];
+
+static void writeWhole(const char *path, const char *text) {
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) return;
+    ssize_t ignored = write(fd, text, strlen(text));
+    (void)ignored;
+    fsync(fd);
+    close(fd);
+}
+
+static void readWhole(const char *path, char *out, size_t size) {
+    out[0] = 0;
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) return;
+    ssize_t got = read(fd, out, size - 1);
+    out[got > 0 ? got : 0] = 0;
+    close(fd);
+}
+
+static void resumeInit(void) {
+    char current[128], version_line[64];
+    snprintf(version_line, sizeof(version_line), "version %s\n", PROBE_VERSION);
+    readWhole(STATE_CRASHED, crashed_groups, sizeof(crashed_groups));
+    if (strncmp(crashed_groups, version_line, strlen(version_line))) {  // other probe version: start fresh
+        snprintf(crashed_groups, sizeof(crashed_groups), "%s", version_line);
+        writeWhole(STATE_CURRENT, "");
+    }
+    readWhole(STATE_CURRENT, current, sizeof(current));
+    current[strcspn(current, "\r\n")] = 0;
+    if (current[0]) {
+        say("RESUME the previous launch died inside group %s; it is skipped from now on", current);
+        size_t used = strlen(crashed_groups);
+        snprintf(crashed_groups + used, sizeof(crashed_groups) - used, "%s\n", current);
+        writeWhole(STATE_CRASHED, crashed_groups);
+        writeWhole(STATE_CURRENT, "");
+    } else
+        writeWhole(STATE_CRASHED, crashed_groups);
+    if (strchr(strchr(crashed_groups, '\n') + 1, '\n'))
+        say("RESUME groups that crashed on earlier launches: %s", strchr(crashed_groups, '\n') + 1);
+}
+
+// Returns false (and marks the given checks FAIL) when the group crashed before; otherwise records it as running.
+static bool groupBegin(const char *group, const char *const *group_checks) {
+    char needle[96];
+    snprintf(needle, sizeof(needle), "\n%s\n", group);
+    if (strstr(crashed_groups, needle)) {
+        say("SKIP group %s (it crashed the title on an earlier launch)", group);
+        for (size_t i = 0; group_checks && group_checks[i]; ++i) mark(group_checks[i], FAIL);
+        return false;
+    }
+    writeWhole(STATE_CURRENT, group);
+    return true;
+}
+static void groupEnd(void) { writeWhole(STATE_CURRENT, ""); }
+
+#define RUN_GROUP(group, function, ...)                                     \
+    do {                                                                    \
+        static const char *const group_checks_[] = {__VA_ARGS__, NULL};     \
+        if (groupBegin(group, group_checks_)) {                             \
+            function();                                                     \
+            groupEnd();                                                     \
+        }                                                                   \
+    } while (0)
 
 // ---- fault guard: risky reads/executions longjmp back instead of killing the title -------------
 static sigjmp_buf guard_point;
@@ -456,12 +533,99 @@ static void probeVm(void) {
     mark("vm.directfixed", fixed_direct ? PASS : FAIL);
 }
 
+// ---- virtual ranges (the console's own reservation API) ---------------------------------------------
+// probe-2 showed PROT_NONE mmap reservations fail with ENOMEM (they are charged to the ~400 MiB flexible budget)
+// while direct memory has GiBs. GraalVM needs a large reserved range with memory committed inside it later, so
+// test the console's reservation call and direct memory mapped at fixed addresses inside it.
+static void probeVirtualRange(void) {
+    say("BEGIN vm.vrange");
+    static const unsigned gib[] = {1, 4, 16, 32, 64};
+    unsigned largest = 0;
+    for (size_t i = 0; i < sizeof(gib) / sizeof(*gib); ++i) {
+        void *base = NULL;
+        size_t bytes = (size_t)gib[i] << 30;
+        int rc = sceKernelReserveVirtualRange(&base, bytes, 0, 2u << 20);
+        say("vm reserve-virtual-range %u GiB rc=0x%x base=%p", gib[i], rc, base);
+        if (rc == 0 && base) {
+            largest = gib[i];
+            int rc_unmap = munmap(base, bytes);
+            if (rc_unmap) say("vm   releasing it with munmap failed errno=%d", errno);
+        }
+    }
+    mark("vm.vrange", largest >= 4 ? PASS : FAIL);
+
+    say("BEGIN vm.vrangedirect");
+    void *base = NULL;
+    size_t range = (size_t)4 << 30;
+    int rc = sceKernelReserveVirtualRange(&base, range, 0, 2u << 20);
+    if (rc || !base) {
+        say("vm vrangedirect: 4 GiB reservation failed rc=0x%x", rc);
+        mark("vm.vrangedirect", FAIL);
+        return;
+    }
+    int64_t total = sceKernelGetDirectMemorySize();
+    bool ok = true;
+    // Commit three 64 MiB chunks at fixed offsets, as a GC growing its heap would, then an anonymous one.
+    static const size_t offsets[] = {0, (size_t)1 << 30, (size_t)3 << 30};
+    int64_t physical[3] = {0};
+    for (int i = 0; i < 3; ++i) {
+        void *where = (char *)base + offsets[i];
+        int rc_alloc = sceKernelAllocateDirectMemory(0, total, 64u << 20, 2u << 20, SCE_KERNEL_WB_ONION, &physical[i]);
+        int rc_map = rc_alloc ? -1
+                              : sceKernelMapDirectMemory(&where, 64u << 20, PROT_READ | PROT_WRITE, SCE_KERNEL_MAP_FIXED,
+                                                         physical[i], 2u << 20);
+        bool touched = !rc_map && where == (char *)base + offsets[i] && GUARDED(memset(where, 0x5a, 64u << 20));
+        say("vm   direct chunk at +%zu MiB: alloc=0x%x map=0x%x where=%p touched=%d", offsets[i] >> 20, rc_alloc, rc_map,
+            where, touched);
+        ok = ok && touched;
+    }
+    void *anon = mmap((char *)base + ((size_t)2 << 30), 16u << 20, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON | MAP_FIXED, -1, 0);
+    bool anon_ok = anon != MAP_FAILED && GUARDED(memset(anon, 1, 16u << 20));
+    say("vm   anonymous 16 MiB MAP_FIXED inside the range -> %p errno=%d touched=%d", anon == MAP_FAILED ? NULL : anon,
+        anon == MAP_FAILED ? errno : 0, anon_ok);
+    int rc_protect = mprotect((char *)base + offsets[1], 64u << 20, PROT_NONE);
+    int rc_back = mprotect((char *)base + offsets[1], 64u << 20, PROT_READ | PROT_WRITE);
+    volatile char sample = 0;
+    bool kept = !rc_back && GUARDED(sample = *((char *)base + offsets[1] + 4096)) && sample == 0x5a;
+    say("vm   mprotect NONE=%d back to RW=%d contents kept=%d", rc_protect, rc_back, kept);
+    say("vm   release munmap=%d", munmap(base, range));
+    for (int i = 0; i < 3; ++i)
+        if (physical[i]) sceKernelReleaseDirectMemory(physical[i], 64u << 20);
+    mark("vm.vrangedirect", ok && kept ? PASS : FAIL);
+}
+
 // ---- filesystem -----------------------------------------------------------------------------------
 // The installer uploads ROMs to /data/homebrew/<TITLE_ID>/roms/, which the title mounter exposes read-only as
 // /app0/roms. Check that the files show up there and can be read end to end (PASS), or report that no ROMs were
 // uploaded (INFO). The client only reads ROMs; its caches go to /download0.
+// Logs what a directory looks like from inside the sandbox (first entries, or the error).
+static void listDir(const char *path) {
+    DIR *directory = opendir(path);
+    if (!directory) {
+        say("fs view %-14s opendir errno=%d", path, errno);
+        return;
+    }
+    char names[400] = "";
+    struct dirent *entry;
+    unsigned count = 0;
+    while ((entry = readdir(directory))) {
+        if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..")) continue;
+        if (count++ < 24 && strlen(names) + strlen(entry->d_name) + 2 < sizeof(names)) {
+            strcat(names, entry->d_name);
+            strcat(names, " ");
+        }
+    }
+    closedir(directory);
+    say("fs view %-14s %u entries: %s", path, count, names);
+}
+
 static void probeAppRoms(void) {
     say("BEGIN fs.app0roms");
+    static const char *const views[] = {"/", "/app0", "/app0/roms", "/mnt", "/mnt/sandbox", "/data", "/user", "/download0"};
+    for (size_t i = 0; i < sizeof(views) / sizeof(*views); ++i) listDir(views[i]);
+    struct stat info;
+    int rc_stat = stat("/app0/roms", &info);
+    say("fs stat(/app0/roms) rc=%d errno=%d mode=0%o", rc_stat, rc_stat ? errno : 0, rc_stat ? 0 : (unsigned)info.st_mode);
     DIR *directory = opendir("/app0/roms");
     if (!directory) {
         say("fs /app0/roms not present errno=%d (upload ROMs with the installer to test this path)", errno);
@@ -606,30 +770,52 @@ static void probeFiles(void) {
 }
 
 // ---- network --------------------------------------------------------------------------------------
+// probe-2 crashed inside getaddrinfo: in titles it comes from a WebKit-only module. Resolve names with the
+// console's own resolver instead; getaddrinfo is tried last, on its own, to record whether it ever works.
+static struct in_addr resolved;
+static bool have_resolved;
+
 static void probeNetwork(void) {
     say("BEGIN net.dns");
-    struct addrinfo hints, *result = NULL;
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_STREAM;
-    int rc = getaddrinfo("pokemmo.com", "443", &hints, &result);
+    int rc_init = sceNetInit();
+    int pool = sceNetPoolCreate("prospero-net", 64 * 1024, 0);
+    int resolver = pool >= 0 ? sceNetResolverCreate("prospero-dns", pool, 0) : -1;
+    int rc = resolver >= 0 ? sceNetResolverStartNtoa(resolver, "pokemmo.com", &resolved, 0, 0, 0) : -1;
     char address[64] = "?";
-    if (!rc && result) inet_ntop(AF_INET, &((struct sockaddr_in *)result->ai_addr)->sin_addr, address, sizeof(address));
-    say("net getaddrinfo(pokemmo.com) rc=%d addr=%s", rc, address);
-    mark("net.dns", !rc && result ? PASS : FAIL);
-    if (rc || !result) return;
+    if (rc == 0) inet_ntop(AF_INET, &resolved, address, sizeof(address));
+    say("net sceNetInit=0x%x pool=0x%x resolver=0x%x resolve(pokemmo.com)=0x%x addr=%s", rc_init, pool, resolver, rc, address);
+    if (resolver >= 0) sceNetResolverDestroy(resolver);
+    have_resolved = rc == 0 && resolved.s_addr;
+    mark("net.dns", have_resolved ? PASS : FAIL);
+    if (!have_resolved) return;
 
     say("BEGIN net.tcp");
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     struct timeval timeout = {5, 0};
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+    struct sockaddr_in target;
+    memset(&target, 0, sizeof(target));
+    target.sin_family = AF_INET;
+    target.sin_port = htons(443);
+    target.sin_addr = resolved;
     double start = now();
-    int rc_connect = fd >= 0 ? connect(fd, result->ai_addr, result->ai_addrlen) : -1;
-    say("net tcp connect pokemmo.com:443 rc=%d errno=%d %.0f ms", rc_connect, rc_connect ? errno : 0, (now() - start) * 1000);
+    int rc_connect = fd >= 0 ? connect(fd, (struct sockaddr *)&target, sizeof(target)) : -1;
+    say("net tcp connect %s:443 rc=%d errno=%d %.0f ms", address, rc_connect, rc_connect ? errno : 0, (now() - start) * 1000);
     if (fd >= 0) close(fd);
-    freeaddrinfo(result);
     mark("net.tcp", !rc_connect ? PASS : FAIL);
+}
+
+static void probeGetaddrinfo(void) {
+    say("BEGIN net.getaddrinfo");
+    struct addrinfo hints, *result = NULL;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    int rc = getaddrinfo("pokemmo.com", "443", &hints, &result);
+    say("net getaddrinfo(pokemmo.com) rc=%d", rc);
+    if (result) freeaddrinfo(result);
+    mark("net.getaddrinfo", rc == 0 ? PASS : FAIL);
 }
 
 // ---- executable memory ----------------------------------------------------------------------------
@@ -1103,7 +1289,7 @@ static void drawTiles(void) {
     glClearColor(0.08f, 0.08f, 0.10f, 1);
     glClear(GL_COLOR_BUFFER_BIT);
     glEnable(GL_SCISSOR_TEST);
-    const int columns = 7, size = width / 12, gap = size / 6;
+    const int columns = 8, size = width / 13, gap = size / 6;
     const int left = (width - columns * size - (columns - 1) * gap) / 2;
     const int rows = (int)((CHECK_COUNT + columns - 1) / columns);
     const int top = (height + rows * size + (rows - 1) * gap) / 2;
@@ -1121,7 +1307,7 @@ static void drawTiles(void) {
     // Controller tester: one small square per button along the bottom, white while held.
     if (pad_have) {
         const int cell = width / 40, step = cell + cell / 3;
-        const int start = (width - (int)PAD_BUTTON_COUNT * step) / 2, y = height / 10;
+        const int start = (width - (int)PAD_BUTTON_COUNT * step) / 2, y = height / 20;
         for (size_t i = 0; i < PAD_BUTTON_COUNT; ++i) {
             bool held = pad_now.connected && (pad_now.buttons & pad_buttons[i].mask);
             glScissor(start + (int)i * step, y, cell, cell);
@@ -1151,17 +1337,24 @@ int main(void) {
     say("PokeMMO-Prospero %s (build %s, %s) starting; UDP log port %d%s", PROBE_VERSION, PROSPERO_VERSION, PROSPERO_TITLE_ID, PROBE_PORT, log_has_host ? " (+unicast host)" : "");
     guardInstall();
     probeSystem();
-    bool have_gl = glOpen();
-    if (have_gl) probeGl();
-    probeFs28();
-    probeThreads();
-    probeVm();
-    probeFiles();
-    probeAppRoms();
-    probeDataRoms();
-    probeUsb();
-    probeNetwork();
-    probeExec();  // last: the likeliest to take the title down
+    resumeInit();
+    bool have_gl = false;
+    if (groupBegin("gl", (const char *const[]){"gl.context", "gl.compat", NULL})) {
+        have_gl = glOpen();
+        if (have_gl) probeGl();
+        groupEnd();
+    }
+    RUN_GROUP("tls", probeFs28, "tls.fs28");
+    RUN_GROUP("threads", probeThreads, "thread.stack", "thread.getattr");
+    RUN_GROUP("vm", probeVm, "vm.reserve", "vm.fixed", "vm.commit", "vm.direct", "vm.directfixed");
+    RUN_GROUP("vrange", probeVirtualRange, "vm.vrange", "vm.vrangedirect");
+    RUN_GROUP("files", probeFiles, "fs.download0");
+    RUN_GROUP("approms", probeAppRoms, "fs.app0roms");
+    RUN_GROUP("dataroms", probeDataRoms, "fs.dataroms");
+    RUN_GROUP("usb", probeUsb, "fs.usb");
+    RUN_GROUP("net", probeNetwork, "net.dns", "net.tcp");
+    RUN_GROUP("exec", probeExec, "exec.rwx", "exec.mprotect", "exec.jit");
+    RUN_GROUP("getaddrinfo", probeGetaddrinfo, "net.getaddrinfo");  // crashed probe-2; last so nothing else depends on it
 
     summarize();
     say("DONE with the automatic checks. Now the CONTROLLER TESTER runs: press each button, move the sticks, touch");

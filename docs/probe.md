@@ -23,8 +23,10 @@ From the build environment (see `pokemmo-ps5-buildenv`):
    `/download0/probe.log`, but that is inside the title's storage image and is **not** reachable over FTP, so the
    UDP log is the one to keep.
 
-The automatic checks take about a minute; the executable-memory ones run last. If the title closes, the last
-`BEGIN` line in the log names the check that took it down.
+The automatic checks take about a minute. If the title closes, the last `BEGIN` line in the log names the check
+that took it down, and **just launch it again**: the probe remembers which group crashed (in its `/download0`
+storage), marks those checks FAIL and skips them, so each relaunch gets further. The memory resets with every new
+probe version.
 
 After `DONE`, the probe becomes a **controller tester**: press every button once (each lights a square along the
 bottom of the screen and is logged), move both sticks, touch and click the touchpad, then press **Triangle** to open
@@ -33,14 +35,15 @@ USB drive in before launching (ROMs at its top level are read too).
 
 ## Screen
 
-One tile per check, left to right, top to bottom. Green pass, red fail, blue informational, grey not run.
+One tile per check, eight per row, left to right, top to bottom. Green pass, red fail, blue informational, grey not
+run.
 
 | Row | Tiles |
 |-----|-------|
-| 1 | gl.context, gl.compat, gl.glsl110, gl.glsl120, gl.glsl130, gl.clientarr, gl.vbo-novao |
-| 2 | gl.blend, gl.immediate, tls.fs28, thread.stack, thread.getattr, vm.reserve, vm.fixed |
-| 3 | vm.commit, vm.direct, vm.directfixed, fs.download0, fs.app0roms, fs.dataroms, fs.usb |
-| 4 | net.dns, net.tcp, exec.rwx, exec.mprotect, exec.jit, input.pad, input.ime |
+| 1 | gl.context, gl.compat, gl.glsl110, gl.glsl120, gl.glsl130, gl.clientarr, gl.vbo-novao, gl.blend |
+| 2 | gl.immediate, tls.fs28, thread.stack, thread.getattr, vm.reserve, vm.fixed, vm.commit, vm.direct |
+| 3 | vm.directfixed, vm.vrange, vm.vrangedirect, fs.download0, fs.app0roms, fs.dataroms, fs.usb, net.dns |
+| 4 | net.tcp, net.getaddrinfo, exec.rwx, exec.mprotect, exec.jit, input.pad, input.ime |
 
 Below the tiles, one small square per controller button lights while that button is held.
 
@@ -55,12 +58,14 @@ Below the tiles, one small square per controller button lights while that button
 | thread.stack, thread.getattr | Thread stack size control; main-thread stack bounds (GraalVM needs them) | different stack strategy |
 | vm.reserve, vm.fixed | Large PROT_NONE reservations and fixed mappings inside them (GraalVM heap layout) | heap reservation strategy |
 | vm.commit | How much anonymous (flexible) memory can be committed — informational | — |
-| vm.direct, vm.directfixed | Direct memory budget, and mapping it at a fixed address inside a reservation | Java heap won't fit |
+| vm.direct, vm.directfixed | Direct memory budget, and mapping it at a fixed address inside an mmap reservation | Java heap won't fit |
+| vm.vrange, vm.vrangedirect | The console's own reservation call (`sceKernelReserveVirtualRange`) for large ranges, with direct memory committed at fixed addresses inside and `mprotect` on it | heap layout needs another approach |
 | fs.download0 | Writable title storage | storage plan changes |
 | fs.app0roms | Do ROMs uploaded to `/data/homebrew/<ID>/roms/` show up, readable, at `/app0/roms`? (blue = none uploaded) | ROM location changes |
 | fs.dataroms | Can a title read ROMs straight from `/data` (`/data/homebrew/PPSA27165/roms`, `/data/pokemmo-prospero/roms`)? Red = sandbox denies it | `.ffpfsc`/fpkg installs need another ROM route |
 | fs.usb | Can a title see and read USB drives (`/mnt/usb0`–`7`)? Blue = none visible | in-app "import from USB" not possible |
-| net.dns, net.tcp | Reaching PokeMMO's servers from a title | networking needs elevation |
+| net.dns, net.tcp | Resolving and reaching PokeMMO's servers with the console resolver (`sceNetResolver`) | networking needs elevation |
+| net.getaddrinfo | Does POSIX `getaddrinfo` work in a title? It comes from a WebKit-only module and crashed probe-2 | the loader resolves names through `sceNetResolver` |
 | exec.rwx, exec.mprotect, exec.jit | Which executable-memory route works (libffi closures) | fall back to static trampolines |
 | input.pad | Controller input in a title; the log maps every button bit, stick axis and touchpad report | input layer design |
 | input.ime | Does the system keyboard (IME dialog) open from a title and return typed text? | text entry needs another route |
