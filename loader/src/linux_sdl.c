@@ -628,10 +628,13 @@ static bool sdlPollEvent(void *event) {
     }
     return linuxSdlEventsPop(event);
 }
-// Links ("open in the browser"): a PS5 title has no browser to give them to, so the address is shown with a QR code (link_box.c).
+// Links ("open in the browser"): PS5: the system's web browser opens them (the game goes to the background; the PS button brings
+// it back). When the browser cannot be started, the address is shown with a QR code instead (link_box.c).
 static bool sdlOpenUrl(const char *url) {
     if (!url || !*url) return false;
-    linkBoxShow(url);
+    int result = platformOpenUrl(url);
+    trace("sdl.OpenURL url=%.200s browser=0x%x", url, (unsigned)result);
+    if (result < 0) linkBoxShow(url);
     return true;
 }
 // Memory streams: the game hands its gamepad database to SDL through one. The mappings are counted and ignored (the controller is described by this project).

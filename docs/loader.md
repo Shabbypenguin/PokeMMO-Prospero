@@ -80,7 +80,7 @@ their questions and no longer run.
 | Keyboard up: L2 / R2 | Symbols page / shift (once, caps lock, off) |
 | Keyboard up: touchpad, Options | Tab (next field), Enter |
 | Keyboard up: L3, Circle | Move the keyboard to the top or bottom, close it |
-| A link in the game | A box with the address and a QR code to open it on a phone; Cross or Circle closes it |
+| A link in the game | Opens in the PS5 web browser (the PS button brings the game back); if the browser cannot start, a box shows the address and a QR code |
 
 The keyboard (`loader/src/osk.c`) and the link box (`loader/src/link_box.c`) are the loader's own, drawn over the
 game with `loader/src/overlay.c`; nothing typed is kept. `make overlay-preview` draws them (and the loading screen)

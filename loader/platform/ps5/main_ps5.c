@@ -36,7 +36,7 @@
 #include <sys/ucontext.h>
 #include <unistd.h>
 
-#define LOADER_MILESTONE "loader-9"
+#define LOADER_MILESTONE "loader-10"
 // ps5-opengl's app heap (malloc of the loader and of everything the client allocates with malloc): from direct memory.
 const size_t ps5_opengl_heap_size = 768u << 20;
 

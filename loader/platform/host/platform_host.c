@@ -163,6 +163,11 @@ int platformResolveIPv4(const char *name, uint32_t *address) {
     return result;
 }
 
+int platformOpenUrl(const char *url) {
+    (void)url;
+    return -1;
+}
+
 void platformFatal(const char *message) {
     char line[512];
     snprintf(line, sizeof(line), "FATAL %s", message);

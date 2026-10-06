@@ -473,6 +473,11 @@ int platformAudioOpen(unsigned frames) {
 int platformAudioWrite(int handle, const int16_t *interleaved) { return sceAudioOutOutput(handle, interleaved); }
 void platformAudioClose(int handle) { sceAudioOutClose(handle); }
 
+// ---- web browser ------------------------------------------------------------------------------------------------------------------
+// libSceSystemService is already one of the title's imports (ps5-opengl's runtime needs it), so this adds no start-up risk.
+int sceSystemServiceLaunchWebBrowser(const char *uri, void *parameters);
+int platformOpenUrl(const char *url) { return sceSystemServiceLaunchWebBrowser(url, NULL); }
+
 // ---- end ----------------------------------------------------------------------------------------------------------------------
 void platformFatal(const char *message) {
     char line[512];

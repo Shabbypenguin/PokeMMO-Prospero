@@ -86,4 +86,6 @@ int platformAudioWrite(int handle, const int16_t *interleaved);
 void platformAudioClose(int handle);
 
 // ---- end ----------------------------------------------------------------------------------------------------------------------
+// Opens a web address in the system's browser (the game goes to the background). 0 on success, else a platform code.
+int platformOpenUrl(const char *url);
 void platformFatal(const char *message) __attribute__((noreturn));
