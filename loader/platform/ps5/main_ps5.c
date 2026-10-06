@@ -4,7 +4,7 @@
 // The PS5 title, milestone 1 ("loader-1"): startup self-checks, then the official client inside the loader until it logs its
 // first lines or reaches a function the loader does not provide yet. Graphics, input and audio for the client come later; the
 // screen only shows one tile per step (green pass, red fail, blue information, grey not run, yellow running). Everything is logged
-// over UDP (port 18194, tools/udplog.py) and to /download0/prospero.log.
+// over UDP (port 18194, tools/udplog.py) and to /app0/prospero.log.
 //
 // None of the checks can take the title down: risky calls run under a fault guard, and calls that might block run on their own
 // thread with a time limit.
@@ -686,7 +686,7 @@ int main(void) {
         if (atomic_load(&fatal_signals) && atomic_load(&steps[STEP_COUNT - 1].state) != FAIL) mark("client.end", FAIL);
         if (atomic_load(&game_finished) && !reported) {
             reported = true;
-            say("DONE. Close the title with the PS button. The full log is above (and in /download0/prospero.log).");
+            say("DONE. Close the title with the PS button. The full log is above and in /data/homebrew/" PROSPERO_TITLE_ID "/prospero.log (FTP).");
         }
         sceKernelUsleep(16000);
     }

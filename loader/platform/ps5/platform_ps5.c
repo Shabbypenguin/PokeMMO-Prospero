@@ -7,7 +7,7 @@
 //   code       only flexible memory is used for anything that becomes executable (RW, then mprotect to RX)
 //   listing    opendir is refused in titles (EPERM); open + getdents is tried, with an index file written by the installer as fallback
 //   DNS        getaddrinfo crashes a title (it lives in a WebKit-only module); sceNetResolver works
-//   log        UDP broadcast on port 18194 (+ the host in /app0/assets/loghost.txt) and /download0/prospero.log
+//   log        UDP broadcast on port 18194 (+ the host in /app0/assets/loghost.txt) and /app0/prospero.log
 #include "platform.h"
 #include "linux_net_translate.h"
 #include <arpa/inet.h>
@@ -78,7 +78,7 @@ static void logOpen(void) {
             log_has_host = inet_pton(AF_INET, text, &log_host.sin_addr) == 1;
         }
     }
-    log_file = open("/download0/prospero.log", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    log_file = open("/app0/prospero.log", O_WRONLY | O_CREAT | O_TRUNC, 0644);
 }
 void platformLogLine(const char *line) {
     char text[1100];

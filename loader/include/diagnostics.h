@@ -5,7 +5,7 @@
 #include <stdarg.h>
 #include <stdbool.h>
 
-// The diagnostics log. Every line goes to the platform log (PS5: UDP + /download0/prospero.log; PC: stderr or $PROSPERO_LOG).
+// The diagnostics log. Every line goes to the platform log (PS5: UDP + /app0/prospero.log; PC: stderr or $PROSPERO_LOG).
 void diagnosticsSetEnabled(bool enabled);
 bool diagnosticsEnabled(void);
 void diagnosticsTrace(const char *format, ...) __attribute__((format(printf, 1, 2)));  // one line; the newline is added
