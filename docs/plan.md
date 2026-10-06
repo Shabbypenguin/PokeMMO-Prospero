@@ -44,7 +44,21 @@ Virtual libEGL/libGL backed by ps5-opengl, EGL window at 1080p. Milestone: login
 
 ## Phase 4 — input, audio, text
 
-SDL3 shim on scePad (controller → mouse/keys mapping like NX), OpenAL shim on AudioOut, IME dialog for login/chat.
+The client has its own controller support (through SDL3's gamepad API) and a controller-friendly "Android" UI theme,
+so the loader presents the PS5 controller as an SDL3 gamepad rather than inventing a mapping. PokeMMO-NX shows what
+works on a console (see its README and `linux_sdl*.c`):
+
+| Need | PokeMMO-NX (Switch) | PS5 plan |
+|------|---------------------|----------|
+| Buttons, sticks | virtual SDL3 gamepad; face buttons by printed label (A confirms, B cancels) | same, Cross confirms / Circle cancels (configurable) |
+| Gamepad name | kept short ("Switch Controller"): a long name makes the Android theme's settings pages loop and lag | same rule, e.g. "PS5 Controller" |
+| Keyboard (login, chat) | R3 toggles the console's inline keyboard; game input is held at rest while it is up | R3 opens the system IME dialog; typed text goes to the game as SDL text events; probe `input.ime` |
+| Mouse | L3 toggles a stick-driven cursor (ZR/ZL click) | same on L3, plus the DualSense touchpad as a trackpad (touch to move, click to click); probe logs touch data |
+| File chooser | drawn over the game, shows the game folders and SD card | same, over `/download0`, `/app0` and any readable ROM route |
+| Audio | OpenAL shim on the Switch's audio out | OpenAL shim on AudioOut, 48 kHz |
+
+Not in PokeMMO-NX despite expectations: an updater. Its releases bundle a fixed client revision (32920 in 1.0.0); the
+on-console updater in Phase 5 is our own.
 
 ## Phase 5 — launcher and on-console client updates
 
@@ -84,7 +98,11 @@ Release zip = title folder + installer (`installer/`), icon/backgrounds, ROM ins
 | Client slots, caches, config, logs | inside the title storage image | `/download0/` | the title |
 
 `/download0` is a storage image, not a folder FTP can browse, so logs go out over UDP. Probe check `fs.app0roms` confirms the ROM
-path on real hardware. `downloadDataSize` must cover two client slots + caches (~1.5–2 GB).
+path on real hardware.
+
+A single-file install (`.ffpfsc` image, or a future fpkg) is read-only, so ROMs can't live inside it. The other routes
+are probed: `fs.dataroms` (read a `/data` folder directly) and `fs.usb` (in-app import from a USB drive into
+`/download0`). The folder install stays the default until one of them is proven. `downloadDataSize` must cover two client slots + caches (~1.5–2 GB).
 
 ## Open risks
 

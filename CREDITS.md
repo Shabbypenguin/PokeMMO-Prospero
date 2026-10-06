@@ -7,7 +7,7 @@ when code from another project enters this repository, the entry below is update
 
 - Project: <https://github.com/Petit-Prince-dev/PokeMMO-NX> by **Petit_Prince**, MIT license
   (full text: [LICENSES/PokeMMO-NX-MIT.txt](LICENSES/PokeMMO-NX-MIT.txt)).
-- Reference revision: `5c03eb0cd213013d37a5e092b5cbcb6bf17fa8c1`.
+- Reference revisions: `5c03eb0` (1.0.0) for the loader design, `cac8d83` (1.1.2) for the input design.
 
 PokeMMO-NX proved the approach this port uses: load the **official, unmodified** PokeMMO Linux client with a small
 C loader that supplies the Linux libc, SDL3, OpenAL, EGL/GL and GTK it expects, and never redistribute the client.
@@ -23,6 +23,7 @@ What this repository takes from it today:
 | The libffi closure interception idea (LWJGL callbacks need executable trampolines) | [docs/plan.md](docs/plan.md), `probe/probe.c` (exec checks) | design, no code |
 | Downloading the client at build time instead of shipping it | `tools/fetch_client.py` | adapted from `tools/fetch_client.py` |
 | JVM launch options `-XX:MaxHeapSize=640m -XX:MaxNewSize=128m` | [docs/plan.md](docs/plan.md) (Phase 2) | values |
+| Input design: controller as an SDL3 gamepad with face buttons by printed label, a short gamepad name (long ones make the client's Android theme lag), R3 for the keyboard, L3 for a stick cursor | [docs/plan.md](docs/plan.md) (Phase 4) | design, no code |
 
 What will be taken in Phase 2 (planned, not yet in this repository): the portable parts of PokeMMO-NX's loader — the
 ELF loader (`elf_*.c`), the Linux ABI/libc layer (`linux_abi.c`, `linux_stdio.c`, `linux_files.c`, …) and the SDL3,

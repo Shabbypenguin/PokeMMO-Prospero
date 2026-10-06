@@ -9,9 +9,11 @@
 //   tls    what %fs:0x28 holds (the client's 129 stack-canary checks read it) and whether it stays stable.
 //   thread pthread stack size control and main-thread stack bounds (GraalVM needs pthread_getattr_np).
 //   vm     flexible memory budget, large PROT_NONE reservations (GraalVM heap), MAP_FIXED commits inside them.
-//   fs     writable /download0, /data visibility.
+//   fs     writable /download0; ROM routes: next to the title (/app0/roms), a /data folder, USB drives.
 //   net    DNS and TCP to the PokeMMO servers.
 //   exec   executable memory: RWX mmap, RW->RX mprotect, JIT shared memory (libffi closure trampolines).
+//   input  after the checks: a live controller tester (every press, stick and touch is logged and lit on screen),
+//          and Triangle opens the system keyboard (IME dialog) to test text entry for login and chat.
 //
 // Results go to UDP (broadcast and an optional host baked in at build time), /download0/probe.log and the
 // screen: one tile per check, green = pass, red = fail, grey = not run. Risky checks log "BEGIN <name>"
@@ -26,10 +28,12 @@
 #include <signal.h>
 #include <stdarg.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <dirent.h>
@@ -58,9 +62,17 @@ int32_t sceKernelMapDirectMemory(void **address, size_t length, int protection, 
 int32_t sceKernelReleaseDirectMemory(int64_t physical_start, size_t length);
 #define SCE_KERNEL_MAP_FIXED 0x10
 #define SCE_KERNEL_WB_ONION 12  // CPU-cached; the type ps5-opengl's app heap uses
+int sceKernelLoadStartModule(const char *path, size_t argument_size, const void *arguments, uint32_t flags, void *options,
+                             int *result);
+int sceKernelDlsym(int handle, const char *symbol, void **address);
+int sceUserServiceInitialize(void *parameters);
+int sceUserServiceGetInitialUser(int *user);
+int scePadInit(void);
+int scePadOpen(int user, int type, int index, const void *parameters);
+
 
 #define PROBE_PORT 18194
-#define PROBE_VERSION "probe-1"
+#define PROBE_VERSION "probe-2"
 
 // ---- result tiles -----------------------------------------------------------------------------
 enum { NOT_RUN = 0, PASS = 1, FAIL = 2, INFO = 3 };
@@ -73,8 +85,9 @@ static Check checks[] = {
     {"gl.glsl130", NOT_RUN},  {"gl.clientarr", NOT_RUN}, {"gl.vbo-novao", NOT_RUN}, {"gl.blend", NOT_RUN},
     {"gl.immediate", NOT_RUN}, {"tls.fs28", NOT_RUN},   {"thread.stack", NOT_RUN}, {"thread.getattr", NOT_RUN},
     {"vm.reserve", NOT_RUN},  {"vm.fixed", NOT_RUN},    {"vm.commit", NOT_RUN},  {"vm.direct", NOT_RUN},  {"vm.directfixed", NOT_RUN}, {"fs.download0", NOT_RUN}, {"fs.app0roms", NOT_RUN},
+    {"fs.dataroms", NOT_RUN}, {"fs.usb", NOT_RUN},
     {"net.dns", NOT_RUN},     {"net.tcp", NOT_RUN},     {"exec.rwx", NOT_RUN},   {"exec.mprotect", NOT_RUN},
-    {"exec.jit", NOT_RUN},
+    {"exec.jit", NOT_RUN},    {"input.pad", NOT_RUN},   {"input.ime", NOT_RUN},
 };
 #define CHECK_COUNT (sizeof(checks) / sizeof(*checks))
 static void mark(const char *name, int state);
@@ -491,6 +504,83 @@ static void probeAppRoms(void) {
     mark("fs.app0roms", files == 0 ? INFO : readable == files ? PASS : FAIL);
 }
 
+// Reads every .nds/.gba (any regular file when any_file) in a directory, one level deep. Returns how many files were
+// found and how many could be read end to end; *open_errno is the opendir error (0 when the directory opened).
+static void readRomDir(const char *directory_path, bool any_file, unsigned *found, unsigned *readable, int *open_errno) {
+    *found = *readable = 0;
+    *open_errno = 0;
+    DIR *directory = opendir(directory_path);
+    if (!directory) {
+        *open_errno = errno;
+        return;
+    }
+    struct dirent *entry;
+    unsigned listed = 0;
+    while ((entry = readdir(directory))) {
+        if (entry->d_name[0] == '.') continue;
+        char path[512];
+        snprintf(path, sizeof(path), "%s/%s", directory_path, entry->d_name);
+        struct stat info;
+        if (stat(path, &info)) continue;
+        if (listed++ < 12) say("fs   %s/%s%s size=%lld", directory_path, entry->d_name, S_ISDIR(info.st_mode) ? "/" : "", (long long)info.st_size);
+        size_t length = strlen(entry->d_name);
+        bool rom = length > 4 && (!strcasecmp(entry->d_name + length - 4, ".nds") || !strcasecmp(entry->d_name + length - 4, ".gba"));
+        if (!S_ISREG(info.st_mode) || !(rom || any_file)) continue;
+        ++*found;
+        int fd = open(path, O_RDONLY);
+        long long total = 0;
+        if (fd >= 0) {
+            static char block[1 << 16];
+            ssize_t got;
+            while ((got = read(fd, block, sizeof(block))) > 0) total += got;
+            close(fd);
+        }
+        if (fd >= 0 && total == (long long)info.st_size) ++*readable;
+        else say("fs   could not read %s fully (open errno=%d, read %lld of %lld)", path, fd < 0 ? errno : 0, total, (long long)info.st_size);
+    }
+    closedir(directory);
+}
+
+// Route 2: ROMs in a /data folder, read directly. Uses the folder the installer uploads to (/data/homebrew/<ID>/roms),
+// so no extra upload is needed, plus the dedicated folder an image-based install would use.
+static void probeDataRoms(void) {
+    say("BEGIN fs.dataroms");
+    static const char *const directories[] = {"/data/homebrew/PPSA27165/roms", "/data/pokemmo-prospero/roms"};
+    bool denied = false, worked = false;
+    for (size_t i = 0; i < sizeof(directories) / sizeof(*directories); ++i) {
+        unsigned found, readable;
+        int open_errno;
+        readRomDir(directories[i], false, &found, &readable, &open_errno);
+        say("fs %s opendir errno=%d roms=%u readable=%u", directories[i], open_errno, found, readable);
+        if (open_errno == EACCES || open_errno == EPERM) denied = true;
+        if (!open_errno && found && readable == found) worked = true;
+    }
+    DIR *data = opendir("/data");
+    say("fs opendir(/data) %s errno=%d", data ? "ok" : "failed", data ? 0 : errno);
+    if (data) closedir(data);
+    mark("fs.dataroms", worked ? PASS : denied ? FAIL : INFO);  // INFO: nothing there to read (or no ROMs uploaded)
+}
+
+// Route 3: USB drives. Lists /mnt/usb0..7 and reads any ROMs found at their top level.
+static void probeUsb(void) {
+    say("BEGIN fs.usb");
+    bool present = false, denied = false, worked = false;
+    for (int index = 0; index < 8; ++index) {
+        char mount[32];
+        snprintf(mount, sizeof(mount), "/mnt/usb%d", index);
+        unsigned found, readable;
+        int open_errno;
+        readRomDir(mount, false, &found, &readable, &open_errno);
+        if (open_errno == ENOENT || open_errno == ENOTDIR) continue;
+        present = true;
+        say("fs %s opendir errno=%d roms=%u readable=%u", mount, open_errno, found, readable);
+        if (open_errno) denied = true;
+        else worked = true;  // the drive is readable even without ROMs on it
+    }
+    if (!present) say("fs no /mnt/usbN visible (no drive plugged in, or the sandbox hides them)");
+    mark("fs.usb", worked ? PASS : denied ? FAIL : INFO);
+}
+
 static void probeFiles(void) {
     say("BEGIN fs.download0");
     bool ok = mkdir("/download0/probe-dir", 0755) == 0 || errno == EEXIST;
@@ -812,6 +902,197 @@ static void probeGl(void) {
     glDeleteTextures(1, &texture);
 }
 
+// ---- input: controller tester and system keyboard ------------------------------------------------------------
+// Pad record as the PS4/PS5 pad library returns it: 120 bytes. The button/stick/connected fields are the ones
+// ps5-opengl's TV demo uses; the trigger and touch fields follow the PS4 layout and are logged raw so a mismatch shows.
+typedef struct __attribute__((aligned(8))) {
+    uint32_t buttons;         // 0x00
+    uint8_t lx, ly, rx, ry;   // 0x04 sticks, 128 = centre
+    uint8_t l2, r2;           // 0x08 analog triggers
+    uint8_t pad0[2];
+    float orientation[4];     // 0x0c
+    float acceleration[3];    // 0x1c
+    float angular[3];         // 0x28
+    uint8_t touch_count;      // 0x34
+    uint8_t touch_pad[7];
+    struct {
+        uint16_t x, y;
+        uint8_t id;
+        uint8_t reserved[3];
+    } touch[2];               // 0x3c
+    int32_t connected;        // 0x4c
+    uint8_t rest[40];
+} PadState;
+_Static_assert(sizeof(PadState) == 120, "pad record size");
+_Static_assert(offsetof(PadState, connected) == 0x4c, "pad connection offset");
+int scePadReadState(int handle, PadState *state);
+
+static const struct {
+    uint32_t mask;
+    const char *name;
+} pad_buttons[] = {{0x00004000, "CROSS"},    {0x00002000, "CIRCLE"}, {0x00008000, "SQUARE"}, {0x00001000, "TRIANGLE"},
+                   {0x00000010, "UP"},       {0x00000040, "DOWN"},   {0x00000080, "LEFT"},   {0x00000020, "RIGHT"},
+                   {0x00000400, "L1"},       {0x00000800, "R1"},     {0x00000100, "L2"},     {0x00000200, "R2"},
+                   {0x00000002, "L3"},       {0x00000004, "R3"},     {0x00000008, "OPTIONS"}, {0x00100000, "TOUCHPAD"}};
+#define PAD_BUTTON_COUNT (sizeof(pad_buttons) / sizeof(*pad_buttons))
+
+static int pad_handle = -1;
+static PadState pad_now;
+static bool pad_have;
+
+static void padOpen(void) {
+    say("BEGIN input.pad");
+    int user = -1;
+    int rc_service = sceUserServiceInitialize(NULL);
+    int rc_user = sceUserServiceGetInitialUser(&user);
+    int rc_init = scePadInit();
+    pad_handle = rc_user == 0 && rc_init >= 0 ? scePadOpen(user, 0, 0, NULL) : -1;
+    say("input user service=0x%x user rc=0x%x id=%d pad init=0x%x open=0x%x", rc_service, rc_user, user, rc_init, pad_handle);
+    say("input CONTROLLER TESTER: press every button, move both sticks, touch the touchpad; Triangle opens the keyboard");
+    if (pad_handle < 0) mark("input.pad", FAIL);
+}
+
+// Called every frame. Logs edges and movement (throttled) and marks input.pad on the first press.
+static uint32_t padPoll(void) {
+    static uint32_t previous;
+    static uint8_t last_lx = 128, last_ly = 128, last_rx = 128, last_ry = 128, last_touches;
+    static unsigned touch_frames;
+    static unsigned reads_failed;
+    if (pad_handle < 0) return 0;
+    PadState state;
+    int rc = scePadReadState(pad_handle, &state);
+    if (rc < 0) {
+        if (reads_failed++ < 3) say("input scePadReadState rc=0x%x", rc);
+        return 0;
+    }
+    pad_now = state;
+    pad_have = true;
+    uint32_t buttons = state.connected ? state.buttons & 0x7fffffffu : 0;
+    uint32_t pressed = buttons & ~previous, released = previous & ~buttons;
+    for (size_t i = 0; i < PAD_BUTTON_COUNT; ++i) {
+        if (pressed & pad_buttons[i].mask) say("input press   %-8s (0x%08x)", pad_buttons[i].name, pad_buttons[i].mask);
+        if (released & pad_buttons[i].mask) say("input release %s", pad_buttons[i].name);
+    }
+    uint32_t known = 0;
+    for (size_t i = 0; i < PAD_BUTTON_COUNT; ++i) known |= pad_buttons[i].mask;
+    if (pressed & ~known) say("input press   unknown bits 0x%08x", pressed & ~known);
+    static bool proven;
+    if (pressed && !proven) {  // the first real press proves the whole path
+        proven = true;
+        mark("input.pad", PASS);
+    }
+    #define MOVED(a, b) (abs((int)(a) - (int)(b)) > 24)
+    if (MOVED(state.lx, last_lx) || MOVED(state.ly, last_ly) || MOVED(state.rx, last_rx) || MOVED(state.ry, last_ry)) {
+        say("input sticks L=(%3u,%3u) R=(%3u,%3u) triggers L2=%3u R2=%3u", state.lx, state.ly, state.rx, state.ry, state.l2, state.r2);
+        last_lx = state.lx, last_ly = state.ly, last_rx = state.rx, last_ry = state.ry;
+    }
+    // Touchpad: log when the number of fingers changes, and positions every ~quarter second while touching.
+    if (state.touch_count != last_touches || (state.touch_count && ++touch_frames % 15 == 0))
+        say("input touch count=%u t0=(%u,%u id %u) t1=(%u,%u id %u)", state.touch_count, state.touch[0].x, state.touch[0].y,
+            state.touch[0].id, state.touch[1].x, state.touch[1].y, state.touch[1].id);
+    last_touches = state.touch_count;
+    #undef MOVED
+    previous = buttons;
+    return pressed;
+}
+
+// System keyboard (IME dialog), loaded at run time so a missing module can't stop the probe from starting.
+// Parameter block in the PS4 layout (96 bytes); the probe logs every return code so a layout mismatch is visible.
+typedef struct {
+    int32_t user;
+    int32_t type;                // 0 = default
+    uint64_t languages;          // 0 = system language
+    int32_t enter_label;         // 0 = default
+    int32_t input_method;        // 0 = default
+    void *filter;
+    uint32_t option;
+    uint32_t max_length;
+    uint16_t *text;              // UTF-16 in/out buffer, max_length + 1
+    float x, y;
+    int32_t horizontal, vertical;
+    const uint16_t *placeholder;
+    const uint16_t *title;
+    int8_t reserved[16];
+} ImeParam;
+_Static_assert(sizeof(ImeParam) == 96, "IME parameter size");
+typedef struct {
+    int32_t end_status;          // 0 = OK, 1 = cancelled, 2 = aborted
+    int8_t reserved[12];
+} ImeResult;
+typedef int (*ImeInitFn)(const ImeParam *, void *);
+typedef int (*ImeStatusFn)(void);
+typedef int (*ImeResultFn)(ImeResult *);
+typedef int (*ImeTermFn)(void);
+static struct {
+    bool loaded, tried, running;
+    ImeInitFn init;
+    ImeStatusFn status;
+    ImeResultFn result;
+    ImeTermFn term;
+    uint16_t text[65];
+    uint16_t title[32];
+} ime;
+
+static void imeLoad(void) {
+    if (ime.tried) return;
+    ime.tried = true;
+    static const char *const paths[] = {"libSceImeDialog.sprx", "/system/common/lib/libSceImeDialog.sprx"};
+    for (size_t i = 0; i < sizeof(paths) / sizeof(*paths) && !ime.loaded; ++i) {
+        int start_result = 0;
+        int handle = sceKernelLoadStartModule(paths[i], 0, NULL, 0, NULL, &start_result);
+        say("input ime load %s -> 0x%x (start 0x%x)", paths[i], handle, start_result);
+        if (handle < 0) continue;
+        int a = sceKernelDlsym(handle, "sceImeDialogInit", (void **)&ime.init);
+        int b = sceKernelDlsym(handle, "sceImeDialogGetStatus", (void **)&ime.status);
+        int c = sceKernelDlsym(handle, "sceImeDialogGetResult", (void **)&ime.result);
+        int d = sceKernelDlsym(handle, "sceImeDialogTerm", (void **)&ime.term);
+        say("input ime dlsym init=0x%x status=0x%x result=0x%x term=0x%x", a, b, c, d);
+        ime.loaded = !a && !b && !c && !d && ime.init && ime.status && ime.result && ime.term;
+    }
+    if (!ime.loaded) mark("input.ime", FAIL);
+}
+
+static void imeOpen(void) {
+    say("BEGIN input.ime");
+    imeLoad();
+    if (!ime.loaded || ime.running) return;
+    static const char title[] = "PokeMMO-Prospero keyboard test";
+    for (size_t i = 0; i < sizeof(title) && i < sizeof(ime.title) / 2 - 1; ++i) ime.title[i] = (uint16_t)title[i];
+    memset(ime.text, 0, sizeof(ime.text));
+    int user = -1;
+    sceUserServiceGetInitialUser(&user);
+    ImeParam param;
+    memset(&param, 0, sizeof(param));
+    param.user = user;
+    param.max_length = 64;
+    param.text = ime.text;
+    param.title = ime.title;
+    param.x = 960;
+    param.y = 540;
+    param.horizontal = 1;  // centre
+    param.vertical = 1;
+    int rc = -1;
+    if (!GUARDED(rc = ime.init(&param, NULL))) rc = -1;
+    say("input ime init rc=0x%x%s", rc, guard_signal ? " (faulted: parameter layout differs on PS5)" : "");
+    if (rc == 0) ime.running = true;
+    else mark("input.ime", FAIL);
+}
+
+static void imePoll(void) {
+    if (!ime.running) return;
+    int status = ime.status();
+    if (status != 2) return;  // 1 = running, 2 = finished
+    ImeResult result;
+    memset(&result, 0, sizeof(result));
+    int rc = ime.result(&result);
+    char ascii[66] = {0};
+    for (int i = 0; i < 64 && ime.text[i]; ++i) ascii[i] = ime.text[i] < 128 ? (char)ime.text[i] : '?';
+    say("input ime finished result rc=0x%x end_status=%d text=\"%s\"", rc, result.end_status, ascii);
+    ime.term();
+    ime.running = false;
+    mark("input.ime", rc == 0 ? PASS : FAIL);
+}
+
 // Draws the result tiles with scissored clears only (works whatever else is broken).
 static void drawTiles(void) {
     glUseProgram(0);
@@ -836,7 +1117,32 @@ static void drawTiles(void) {
         }
         glClear(GL_COLOR_BUFFER_BIT);
     }
+    // Controller tester: one small square per button along the bottom, white while held.
+    if (pad_have) {
+        const int cell = width / 40, step = cell + cell / 3;
+        const int start = (width - (int)PAD_BUTTON_COUNT * step) / 2, y = height / 10;
+        for (size_t i = 0; i < PAD_BUTTON_COUNT; ++i) {
+            bool held = pad_now.connected && (pad_now.buttons & pad_buttons[i].mask);
+            glScissor(start + (int)i * step, y, cell, cell);
+            if (held) glClearColor(0.95f, 0.95f, 0.95f, 1);
+            else glClearColor(0.22f, 0.22f, 0.26f, 1);
+            glClear(GL_COLOR_BUFFER_BIT);
+        }
+    }
     glDisable(GL_SCISSOR_TEST);
+}
+
+static void summarize(void) {
+    unsigned passed = 0, failed = 0, info = 0;
+    for (size_t i = 0; i < CHECK_COUNT; ++i) {
+        passed += checks[i].state == PASS;
+        failed += checks[i].state == FAIL;
+        info += checks[i].state == INFO;
+    }
+    say("SUMMARY pass=%u fail=%u info=%u not_run=%u", passed, failed, info, (unsigned)CHECK_COUNT - passed - failed - info);
+    for (size_t i = 0; i < CHECK_COUNT; ++i)
+        say("SUMMARY %-15s %s", checks[i].name,
+            checks[i].state == PASS ? "PASS" : checks[i].state == FAIL ? "FAIL" : checks[i].state == INFO ? "INFO" : "NOT_RUN");
 }
 
 int main(void) {
@@ -851,28 +1157,26 @@ int main(void) {
     probeVm();
     probeFiles();
     probeAppRoms();
+    probeDataRoms();
+    probeUsb();
     probeNetwork();
     probeExec();  // last: the likeliest to take the title down
 
-    unsigned passed = 0, failed = 0;
-    for (size_t i = 0; i < CHECK_COUNT; ++i) {
-        passed += checks[i].state == PASS;
-        failed += checks[i].state == FAIL;
-    }
-    say("SUMMARY pass=%u fail=%u not_run=%u", passed, failed, (unsigned)CHECK_COUNT - passed - failed);
-    for (size_t i = 0; i < CHECK_COUNT; ++i)
-        say("SUMMARY %-15s %s", checks[i].name,
-            checks[i].state == PASS ? "PASS" : checks[i].state == FAIL ? "FAIL" : "NOT_RUN");
-    say("DONE (press the PS button and close the title to exit)");
-    if (log_file) fclose(log_file), log_file = NULL;
+    summarize();
+    say("DONE with the automatic checks. Now the CONTROLLER TESTER runs: press each button, move the sticks, touch");
+    say("the touchpad, then press TRIANGLE to open the system keyboard and type something. Close the title with PS.");
 
     if (!have_gl) {
         for (;;) sceKernelUsleep(1000000);
     }
-    for (unsigned frame = 0;; ++frame) {
+    padOpen();
+    for (unsigned frame = 1;; ++frame) {
+        uint32_t pressed = padPoll();
+        if (pressed & 0x00001000) imeOpen();  // TRIANGLE
+        imePoll();
         drawTiles();
         eglSwapBuffers(display, surface);
-        if (frame % 600 == 599) say("alive; SUMMARY pass=%u fail=%u", passed, failed);  // late listeners still get the result
+        if (frame % 1800 == 0) summarize();  // every ~30 s, for late listeners and to record the input results
         sceKernelUsleep(16000);
     }
 }
