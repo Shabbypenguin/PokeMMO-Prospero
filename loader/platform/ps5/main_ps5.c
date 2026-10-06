@@ -39,7 +39,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define LOADER_MILESTONE "loader-16"
+#define LOADER_MILESTONE "loader-17"
 // ps5-opengl's app heap (malloc of the loader and of everything the client allocates with malloc): from direct memory.
 const size_t ps5_opengl_heap_size = 768u << 20;
 
@@ -163,7 +163,7 @@ static unsigned listFolder(const char *step, const char *path, char names[][256]
 static _Atomic unsigned rom_count;  // games found
 static RomScan rom_scan;
 static pthread_mutex_t rom_lock = PTHREAD_MUTEX_INITIALIZER;
-static char upload_url[160];
+static char upload_address[32];
 static _Atomic bool rom_blocking;
 static _Atomic int rom_choice;  // 0 none, 1 check again, 2 start anyway
 static void scanRoms(void) {
@@ -745,7 +745,7 @@ static void drawScreen(unsigned frame) {
         pthread_mutex_lock(&rom_lock);
         RomScan scan = rom_scan;
         pthread_mutex_unlock(&rom_lock);
-        romScreenDraw(&scan, upload_url, blocking);
+        romScreenDraw(&scan, upload_address, "2121", "/data/homebrew/" PROSPERO_TITLE_ID "/roms/", blocking);
         overlayEnd();
         return;
     }
@@ -758,7 +758,7 @@ static void *workMain(void *argument) {
     (void)argument;
     listFolder("fs.list.app0", "/app0", NULL, 0);
     char address[16];
-    snprintf(upload_url, sizeof(upload_url), "ftp://%s:2121/data/homebrew/%s/roms/", platformLocalIPv4(address) ? address : "<console IP>", PROSPERO_TITLE_ID);
+    snprintf(upload_address, sizeof(upload_address), "%s", platformLocalIPv4(address) ? address : "your console's IP (Settings > Network)");
     scanRoms();
     // The installer's --redownload-client: forget the installed client (its files are overwritten, settings stay) and skip the
     // developer copy this once, so the updater downloads it.

@@ -31,4 +31,5 @@ typedef struct {
 void loadingScreenDraw(const LoadingView *view);
 // The ROM screen: what is in the ROM folder against what PokeMMO uses, and where to upload. `blocking`: the game cannot start
 // as things are (Cross checks again, Circle starts anyway); otherwise it is open while Square is held.
-void romScreenDraw(const RomScan *scan, const char *upload_url, bool blocking);
+// Where to upload: the console's address, the FTP port and the folder, each on its own line.
+void romScreenDraw(const RomScan *scan, const char *address, const char *port, const char *folder, bool blocking);

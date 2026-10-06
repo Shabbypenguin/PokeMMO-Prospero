@@ -139,7 +139,7 @@ int main(int argc, char **argv) {
         romsScan(folder, &scan);
         for (unsigned i = 0; i < scan.count; ++i) printf("rom: %s -> game %d: %s\n", scan.files[i].file, scan.files[i].game, scan.files[i].note);
         overlayBegin(W, H);
-        romScreenDraw(&scan, "ftp://192.168.1.20:2121/data/homebrew/PPSA27166/roms/", true);
+        romScreenDraw(&scan, "192.168.1.20", "2121", "/data/homebrew/PPSA27166/roms/", true);
         overlayEnd();
         snprintf(path, sizeof(path), "%s/roms.ppm", out);
         save(path);

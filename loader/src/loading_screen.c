@@ -102,7 +102,7 @@ void loadingScreenDraw(const LoadingView *view) {
 }
 
 // ---- the ROM screen ------------------------------------------------------------------------------------------------------------------
-void romScreenDraw(const RomScan *scan, const char *upload_url, bool blocking) {
+void romScreenDraw(const RomScan *scan, const char *address, const char *port, const char *folder, bool blocking) {
     const uint32_t GREEN = 0x7EE08AFFu;
     overlayClear(0x050B18FFu);
     overlayTextCentered(OVERLAY_WIDTH / 2, 60, "Game ROMs", 56, TEXT);
@@ -142,11 +142,16 @@ void romScreenDraw(const RomScan *scan, const char *upload_url, bool blocking) {
             overlayText(left + 30, y + 38 + 34 * (float)shown, line, 26, DIM);
         }
     }
-    const float box_y = 790;
-    overlayRect(left, box_y, width, 165, 0x111D36FFu);
-    overlayText(left + 30, box_y + 18, "Upload your ROM files (.nds, .gba) over FTP to:", 30, SOFT);
-    overlayTextFit(left + 30, box_y + 62, upload_url, 38, width - 60, BLUE);
-    overlayText(left + 30, box_y + 116, "or run the installer on your PC and choose your ROM folder.", 28, DIM);
+    const float box_y = 735;
+    overlayRect(left, box_y, width, 225, 0x111D36FFu);
+    overlayText(left + 30, box_y + 16, "Upload your ROM files (.nds, .gba) with an FTP app on your PC or phone:", 28, SOFT);
+    static const char *const labels[] = {"Address", "Port", "Folder"};
+    const char *values[] = {address, port, folder};
+    for (int i = 0; i < 3; ++i) {
+        overlayText(left + 30, box_y + 58 + 44 * (float)i, labels[i], 32, DIM);
+        overlayTextFit(left + 200, box_y + 58 + 44 * (float)i, values[i], 32, width - 230, BLUE);
+    }
+    overlayText(left + 30, box_y + 190, "Or run the installer on your PC and choose your ROM folder.", 26, DIM);
     if (blocking)
         overlayTextCentered(OVERLAY_WIDTH / 2, 995, "\x01 Check again          \x02 Start anyway", 34, TEXT);
     else

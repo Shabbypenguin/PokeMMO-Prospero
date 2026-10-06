@@ -88,7 +88,7 @@ Before the game starts the loader reads the header of every file in the title's 
 the game code PokeMMO itself logs (`IRBO`, `BPRE`, ...) tells Black/White (required), FireRed, Emerald, Platinum and
 HeartGold/SoulSilver (optional) from games PokeMMO does not use (Black 2/White 2, LeafGreen, Ruby/Sapphire, Diamond/Pearl)
 and from compressed or unrelated files. Without Black or White a ROM screen stays up: what was found, what is missing, the
-FTP address to upload to (the console's IP, port 2121) and the installer as the other way; Cross checks the folder again,
+FTP details to upload with (address, port 2121 and folder, each on its own line) and the installer as the other way; Cross checks the folder again,
 Circle starts anyway. With only optional games missing, the loading screen says how many were found and holding Square
 shows the same screen.
 
