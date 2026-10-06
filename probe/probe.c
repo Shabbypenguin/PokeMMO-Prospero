@@ -73,6 +73,7 @@ int scePadOpen(int user, int type, int index, const void *parameters);
 
 #define PROBE_PORT 18194
 #define PROBE_VERSION "probe-2"
+#include "prospero_version.h"  // PROSPERO_VERSION, PROSPERO_TITLE_ID (generated at build time)
 
 // ---- result tiles -----------------------------------------------------------------------------
 enum { NOT_RUN = 0, PASS = 1, FAIL = 2, INFO = 3 };
@@ -1147,7 +1148,7 @@ static void summarize(void) {
 
 int main(void) {
     logInit();
-    say("PokeMMO-Prospero %s starting; UDP log port %d%s", PROBE_VERSION, PROBE_PORT, log_has_host ? " (+unicast host)" : "");
+    say("PokeMMO-Prospero %s (build %s, %s) starting; UDP log port %d%s", PROBE_VERSION, PROSPERO_VERSION, PROSPERO_TITLE_ID, PROBE_PORT, log_has_host ? " (+unicast host)" : "");
     guardInstall();
     probeSystem();
     bool have_gl = glOpen();
