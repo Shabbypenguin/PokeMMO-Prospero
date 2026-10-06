@@ -34,9 +34,10 @@
 #include <strings.h>
 #include <sys/stat.h>
 #include <sys/ucontext.h>
+#include <time.h>
 #include <unistd.h>
 
-#define LOADER_MILESTONE "loader-10"
+#define LOADER_MILESTONE "loader-11"
 // ps5-opengl's app heap (malloc of the loader and of everything the client allocates with malloc): from direct memory.
 const size_t ps5_opengl_heap_size = 768u << 20;
 
@@ -498,6 +499,25 @@ static bool installClient(void) {
     return ok;
 }
 
+// ---- the game's settings: a copy where FTP can see it ---------------------------------------------------------------------------
+// The client keeps its settings in config/main.properties next to itself, in the title storage (not visible over FTP). A copy
+// goes to the title folder at start and whenever the file changes (checked every minute): a backup, and the way to read it.
+#define SETTINGS GAME "/config/main.properties"
+#define SETTINGS_COPY "/app0/settings/main.properties"
+static void backupSettings(void) {
+    static time_t last_time;
+    static off_t last_size = -1;
+    struct stat info;
+    if (stat(SETTINGS, &info) || (info.st_mtime == last_time && info.st_size == last_size)) return;
+    static char buffer[65536];
+    bool ok = copyFile(SETTINGS, SETTINGS_COPY, buffer, sizeof(buffer));
+    say("settings: %s copied to %s (%lld bytes)%s", SETTINGS, SETTINGS_COPY, (long long)info.st_size, ok ? "" : " FAILED");
+    if (ok) {
+        last_time = info.st_mtime;
+        last_size = info.st_size;
+    }
+}
+
 // ---- the client run -----------------------------------------------------------------------------------------------------------------
 static _Atomic bool game_finished, release_screen, screen_released;
 static _Atomic uint64_t client_started_ns;
@@ -708,6 +728,7 @@ int main(void) {
             drawScreen(frame);
             eglSwapBuffers(display, surface);
         }
+        if (frame == 1 || frame % 3750 == 0) backupSettings();  // about once a minute
         if (atomic_load(&fatal_signals) && atomic_load(&steps[STEP_COUNT - 1].state) != FAIL) mark("client.end", FAIL);
         bool install_failed = stepState("client.install") == FAIL;
         if ((atomic_load(&game_finished) || install_failed) && !reported) {

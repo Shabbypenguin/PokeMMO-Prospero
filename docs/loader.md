@@ -82,6 +82,9 @@ their questions and no longer run.
 | Keyboard up: L3, Circle | Move the keyboard to the top or bottom, close it |
 | A link in the game | Opens in the PS5 web browser (the PS button brings the game back); if the browser cannot start, a box shows the address and a QR code |
 
+The game's settings live in `config/main.properties` in the title storage, which FTP cannot see. The loader copies the
+file to `/data/homebrew/PPSA27166/settings/main.properties` at start and within a minute of any change (loader-11).
+
 The keyboard (`loader/src/osk.c`) and the link box (`loader/src/link_box.c`) are the loader's own, drawn over the
 game with `loader/src/overlay.c`; nothing typed is kept. `make overlay-preview` draws them (and the loading screen)
 on a PC with Mesa into `build/overlay-preview/`, and checks what the keyboard types.
