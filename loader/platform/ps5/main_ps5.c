@@ -16,6 +16,7 @@
 #include "loading_screen.h"
 #include "overlay.h"
 #include "platform.h"
+#include "roms.h"
 #include "updater.h"
 #include "prospero_version.h"  // PROSPERO_VERSION, PROSPERO_TITLE_ID (generated at build time)
 #include <EGL/egl.h>
@@ -38,7 +39,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define LOADER_MILESTONE "loader-15"
+#define LOADER_MILESTONE "loader-16"
 // ps5-opengl's app heap (malloc of the loader and of everything the client allocates with malloc): from direct memory.
 const size_t ps5_opengl_heap_size = 768u << 20;
 
@@ -155,36 +156,42 @@ static unsigned listFolder(const char *step, const char *path, char names[][256]
     return count;
 }
 
-static void checkRoms(char names[][256], unsigned count) {
-    mark("fs.romread", RUNNING);
-    if (!count) {
-        say("fs romread: no ROMs listed in /app0/roms (upload them with the installer)");
-        mark("fs.romread", INFO);
-        return;
-    }
-    unsigned readable = 0;
-    for (unsigned i = 0; i < count; ++i) {
-        char path[512];
-        snprintf(path, sizeof(path), "/app0/roms/%s", names[i]);
-        int fd = open(path, O_RDONLY);
-        if (fd < 0) {
-            say("fs romread %s: open errno=%d", names[i], errno);
-            continue;
+// ---- ROMs (loader-16): what is in the ROM folder against what PokeMMO uses (roms.c) ---------------------------------------------
+// Without Black or White the game cannot be played: the ROM screen stays up before the game starts (Cross checks the folder
+// again after an upload, Circle starts anyway). Missing optional games are a note; holding Square shows the screen.
+#define ROM_FOLDER "/app0/roms"
+static _Atomic unsigned rom_count;  // games found
+static RomScan rom_scan;
+static pthread_mutex_t rom_lock = PTHREAD_MUTEX_INITIALIZER;
+static char upload_url[160];
+static _Atomic bool rom_blocking;
+static _Atomic int rom_choice;  // 0 none, 1 check again, 2 start anyway
+static void scanRoms(void) {
+    mark("fs.list.roms", RUNNING);
+    RomScan scan;
+    romsScan(ROM_FOLDER, &scan);
+    pthread_mutex_lock(&rom_lock);
+    rom_scan = scan;
+    pthread_mutex_unlock(&rom_lock);
+    for (unsigned i = 0; i < scan.count; ++i) say("roms: %s: %s", scan.files[i].file, scan.files[i].note);
+    say("roms: %u of %u games found%s", romGamesFound(&scan), (unsigned)ROM_GAMES, scan.listed ? "" : " (the folder cannot be read)");
+    atomic_store(&rom_count, romGamesFound(&scan));
+    mark("fs.list.roms", scan.listed ? PASS : FAIL);
+    mark("fs.romread", scan.found[ROM_BLACK_WHITE] >= 0 ? (romGamesFound(&scan) == ROM_GAMES ? PASS : INFO) : FAIL);
+}
+static void waitForRequiredRom(void) {
+    while (rom_scan.found[ROM_BLACK_WHITE] < 0) {
+        say("roms: Black/White missing: showing the ROM screen");
+        atomic_store(&rom_choice, 0);
+        atomic_store(&rom_blocking, true);
+        while (!atomic_load(&rom_choice)) sceKernelUsleep(20000);
+        if (atomic_load(&rom_choice) == 2) {
+            say("roms: starting without Black/White (the player chose to)");
+            break;
         }
-        unsigned char header[0xb0];
-        ssize_t got = read(fd, header, sizeof(header));
-        struct stat info;
-        fstat(fd, &info);
-        close(fd);
-        char title[13] = {0};
-        bool gba = strstr(names[i], ".gba") || strstr(names[i], ".GBA");
-        if (got == (ssize_t)sizeof(header)) memcpy(title, gba ? header + 0xa0 : header, 12);
-        for (int c = 0; c < 12; ++c)
-            if (title[c] && (title[c] < 32 || title[c] > 126)) title[c] = '?';
-        say("fs romread %s: %lld bytes, header title \"%s\"", names[i], (long long)info.st_size, title);
-        if (got == (ssize_t)sizeof(header)) ++readable;
+        scanRoms();
     }
-    mark("fs.romread", readable == count ? PASS : FAIL);
+    atomic_store(&rom_blocking, false);
 }
 
 // ---- the client: copied from the title folder (dev builds) into the title storage, where it can write next to itself ------------------
@@ -541,7 +548,6 @@ static void applyDefaults(void) {
 // ---- the client run -----------------------------------------------------------------------------------------------------------------
 static _Atomic bool game_finished, release_screen, screen_released;
 static _Atomic uint64_t client_started_ns;
-static _Atomic unsigned rom_count;
 // The SDL layer calls this on the game's thread just before it makes its window surface (ps5-opengl has one): the loading screen
 // stays up through the client's start and gives the display away only then.
 static void acquireDisplay(void) {
@@ -696,7 +702,11 @@ static void loadingView(LoadingView *view, LoadingStep *step_view, char *detail,
         view->problem = "PokeMMO stopped while starting";
         view->advice = "Close the title with the PS button and start it again. If it keeps happening, send prospero.log from the title folder (FTP).";
     }
-    if (!view->warning && stepState("fs.romread") == INFO && !atomic_load(&rom_count)) view->warning = "No ROMs found: add them with the installer to play.";
+    if (!view->warning && stepState("fs.romread") == INFO) {
+        static char note[96];
+        snprintf(note, sizeof(note), "%u of %u games found: hold \x03 for the ROM list", atomic_load(&rom_count), (unsigned)ROM_GAMES);
+        view->warning = note;
+    }
 }
 // The same screen over the game's first (black) frames, on the game's thread and context.
 static void drawLoadingInGame(void) {
@@ -726,6 +736,19 @@ static void drawScreen(unsigned frame) {
         if (pressed & PLATFORM_PAD_CROSS) atomic_store(&update_choice, CHOICE_DOWNLOAD);
         if (pressed & PLATFORM_PAD_CIRCLE) atomic_store(&update_choice, CHOICE_SKIP);
     }
+    bool blocking = atomic_load(&rom_blocking);
+    if (blocking && !atomic_load(&rom_choice)) {
+        if (pressed & PLATFORM_PAD_CROSS) atomic_store(&rom_choice, 1);
+        if (pressed & PLATFORM_PAD_CIRCLE) atomic_store(&rom_choice, 2);
+    }
+    if (!view.details && (blocking || (read && (pad.buttons & PLATFORM_PAD_SQUARE)))) {
+        pthread_mutex_lock(&rom_lock);
+        RomScan scan = rom_scan;
+        pthread_mutex_unlock(&rom_lock);
+        romScreenDraw(&scan, upload_url, blocking);
+        overlayEnd();
+        return;
+    }
     loadingScreenDraw(&view);
     overlayEnd();
 }
@@ -733,11 +756,10 @@ static void drawScreen(unsigned frame) {
 // The checks and the client start run behind the screen.
 static void *workMain(void *argument) {
     (void)argument;
-    static char rom_names[32][256];
     listFolder("fs.list.app0", "/app0", NULL, 0);
-    unsigned roms = listFolder("fs.list.roms", "/app0/roms", rom_names, 32);
-    atomic_store(&rom_count, roms);
-    checkRoms(rom_names, roms > 32 ? 32 : roms);
+    char address[16];
+    snprintf(upload_url, sizeof(upload_url), "ftp://%s:2121/data/homebrew/%s/roms/", platformLocalIPv4(address) ? address : "<console IP>", PROSPERO_TITLE_ID);
+    scanRoms();
     // The installer's --redownload-client: forget the installed client (its files are overwritten, settings stay) and skip the
     // developer copy this once, so the updater downloads it.
     bool redownload = !unlink("/app0/redownload-client");
@@ -752,6 +774,7 @@ static void *workMain(void *argument) {
     updateClient();
     char installed[64];
     if (readSmall(GAME "/revision.txt", installed, sizeof(installed))) {
+        waitForRequiredRom();
         applyDefaults();
         pthread_t game;
         pthread_attr_t attributes;

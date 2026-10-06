@@ -3,6 +3,7 @@
 // The loading screen (loading_screen.c): the logo, one bar and a line of status; the details behind it while Triangle is
 // held. The platform decides what to show (main_ps5.c), this only draws it, between overlayBegin and overlayEnd.
 #pragma once
+#include "roms.h"
 #include <stdbool.h>
 
 enum { LOADING_NOT_RUN = 0, LOADING_PASS, LOADING_FAIL, LOADING_INFO, LOADING_RUNNING };
@@ -28,3 +29,6 @@ typedef struct {
     unsigned frame;
 } LoadingView;
 void loadingScreenDraw(const LoadingView *view);
+// The ROM screen: what is in the ROM folder against what PokeMMO uses, and where to upload. `blocking`: the game cannot start
+// as things are (Cross checks again, Circle starts anyway); otherwise it is open while Square is held.
+void romScreenDraw(const RomScan *scan, const char *upload_url, bool blocking);

@@ -6,6 +6,7 @@
 
 #include "platform.h"
 #include "linux_net_translate.h"
+#include <arpa/inet.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -168,6 +169,24 @@ int platformResolveIPv4(const char *name, uint32_t *address) {
 int platformOpenUrl(const char *url) {
     (void)url;
     return -1;
+}
+
+// The address the system would send from: a UDP socket "connected" to a public address (nothing is sent) and asked its name.
+bool platformLocalIPv4(char out[16]) {
+    int fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (fd < 0) return false;
+    struct sockaddr_in remote = {0}, local = {0};
+    remote.sin_family = AF_INET;
+    remote.sin_port = htons(53);
+    remote.sin_addr.s_addr = htonl(0x01010101u);
+    socklen_t length = sizeof(local);
+    bool ok = !connect(fd, (struct sockaddr *)&remote, sizeof(remote)) && !getsockname(fd, (struct sockaddr *)&local, &length) && local.sin_addr.s_addr;
+    close(fd);
+    if (ok) {
+        uint32_t a = ntohl(local.sin_addr.s_addr);
+        snprintf(out, 16, "%u.%u.%u.%u", a >> 24, (a >> 16) & 255, (a >> 8) & 255, a & 255);
+    }
+    return ok;
 }
 
 // Plain http:// only: enough to test the updater against a local server (tools/range_server.py). HTTP/1.0, so the body is

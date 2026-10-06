@@ -82,6 +82,16 @@ their questions and no longer run.
 | Keyboard up: L3, Circle | Move the keyboard to the top or bottom, close it |
 | A link in the game | Opens in the PS5 web browser (the PS button brings the game back); if the browser cannot start, a box shows the address and a QR code |
 
+### ROMs (loader-16)
+
+Before the game starts the loader reads the header of every file in the title's `roms/` folder (`loader/src/roms.c`):
+the game code PokeMMO itself logs (`IRBO`, `BPRE`, ...) tells Black/White (required), FireRed, Emerald, Platinum and
+HeartGold/SoulSilver (optional) from games PokeMMO does not use (Black 2/White 2, LeafGreen, Ruby/Sapphire, Diamond/Pearl)
+and from compressed or unrelated files. Without Black or White a ROM screen stays up: what was found, what is missing, the
+FTP address to upload to (the console's IP, port 2121) and the installer as the other way; Cross checks the folder again,
+Circle starts anyway. With only optional games missing, the loading screen says how many were found and holding Square
+shows the same screen.
+
 ### Client updates (loader-15)
 
 At every start the loader asks PokeMMO's download server whether the published client changed (one HEAD request; the

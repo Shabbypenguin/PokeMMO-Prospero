@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 // ---- what the overlays need from the rest of the loader ---------------------------------------------------------------------------
 static char typed[512];
@@ -105,6 +106,42 @@ int main(int argc, char **argv) {
         loadingScreenDraw(&v);
         overlayEnd();
         snprintf(path, sizeof(path), "%s/%s.ppm", out, screens[i].name);
+        save(path);
+    }
+
+    // The ROM screen over a folder of pretend ROMs (headers only).
+    {
+        const char *folder = "build/overlay-preview/roms";
+        mkdir(folder, 0755);
+        static const struct {
+            const char *file, *code;
+            bool gba;
+        } fakes[] = {{"Pokemon - FireRed Version (USA, Europe) (Rev 1).gba", "BPRE", true},
+                     {"Pokemon - HeartGold Version (USA).nds", "IPKE", false},
+                     {"Pokemon - Black Version 2 (USA, Europe).nds", "IRE?", false},
+                     {"Pokemon - Emerald.zip", "", false},
+                     {"notes.txt", "", false}};
+        for (unsigned i = 0; i < 5; ++i) {
+            unsigned char header[0x200] = {0};
+            if (fakes[i].code[0]) {
+                memcpy(fakes[i].gba ? header + 0xAC : header + 0x0C, fakes[i].code, 4);
+                if (fakes[i].code[3] == '?') (fakes[i].gba ? header + 0xAC : header + 0x0C)[3] = 'O';
+                if (fakes[i].gba) header[0xB2] = 0x96, header[0xBC] = 1;
+            } else
+                memcpy(header, "hello", 5);
+            char path[512];
+            snprintf(path, sizeof(path), "%s/%s", folder, fakes[i].file);
+            FILE *f = fopen(path, "wb");
+            fwrite(header, 1, sizeof(header), f);
+            fclose(f);
+        }
+        RomScan scan;
+        romsScan(folder, &scan);
+        for (unsigned i = 0; i < scan.count; ++i) printf("rom: %s -> game %d: %s\n", scan.files[i].file, scan.files[i].game, scan.files[i].note);
+        overlayBegin(W, H);
+        romScreenDraw(&scan, "ftp://192.168.1.20:2121/data/homebrew/PPSA27166/roms/", true);
+        overlayEnd();
+        snprintf(path, sizeof(path), "%s/roms.ppm", out);
         save(path);
     }
 

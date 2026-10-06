@@ -74,10 +74,11 @@ host-loader:
 	$(MAKE) -f loader/Makefile.host --no-print-directory
 
 # Pictures of the loading screen, keyboard and link box (build/overlay-preview/*.ppm), drawn with Mesa (libegl-dev, libgl-dev).
-OVERLAY_SOURCES := loader/src/overlay.c loader/src/overlay_assets.c loader/src/loading_screen.c loader/src/osk.c loader/src/link_box.c loader/src/qrcodegen.c
+OVERLAY_SOURCES := loader/src/overlay.c loader/src/overlay_assets.c loader/src/loading_screen.c loader/src/osk.c loader/src/link_box.c loader/src/qrcodegen.c \
+	loader/src/roms.c loader/platform/host/platform_host.c
 overlay-preview:
 	@mkdir -p build/overlay-preview
-	$${CC:-clang} -std=gnu11 -O1 -g -Wall -Wextra -Wno-unused-parameter -Iloader/include -o build/overlay-preview/preview tools/overlay_preview.c \
+	$${CC:-clang} -std=gnu11 -O1 -g -Wall -Wextra -Wno-unused-parameter -D_GNU_SOURCE -Iloader/include -o build/overlay-preview/preview tools/overlay_preview.c \
 		$(OVERLAY_SOURCES) -lEGL -lGL -lz -lm
 	EGL_PLATFORM=surfaceless build/overlay-preview/preview build/overlay-preview
 

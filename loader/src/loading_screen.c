@@ -100,3 +100,55 @@ void loadingScreenDraw(const LoadingView *view) {
         overlayText(OVERLAY_WIDTH - 48 - overlayTextWidth(line, 26), 1025, line, 26, FAINT);
     }
 }
+
+// ---- the ROM screen ------------------------------------------------------------------------------------------------------------------
+void romScreenDraw(const RomScan *scan, const char *upload_url, bool blocking) {
+    const uint32_t GREEN = 0x7EE08AFFu;
+    overlayClear(0x050B18FFu);
+    overlayTextCentered(OVERLAY_WIDTH / 2, 60, "Game ROMs", 56, TEXT);
+    if (blocking)
+        overlayTextCentered(OVERLAY_WIDTH / 2, 135, "PokeMMO needs Pokemon Black or White (DS) to play.", 34, AMBER);
+    else
+        overlayTextCentered(OVERLAY_WIDTH / 2, 135, "PokeMMO needs Black or White; the other games add their regions.", 30, SOFT);
+    const float left = 240, width = 1440, row_h = 66, top = 205;
+    overlayRect(left, top - 10, width, ROM_GAMES * row_h + 10, 0x0C1630FFu);
+    for (int game = 0; game < ROM_GAMES; ++game) {
+        float y = top + (float)game * row_h;
+        int index = scan->found[game];
+        overlayText(left + 30, y + 10, romGameName(game), 36, TEXT);
+        overlayText(left + 520, y + 16, romGameRequired(game) ? "Required" : "Optional", 28, DIM);
+        if (index >= 0)
+            overlayTextFit(left + 720, y + 16, scan->files[index].note, 28, width - 750, GREEN);
+        else
+            overlayText(left + 720, y + 16, "Missing", 28, romGameRequired(game) ? RED : AMBER);
+    }
+    float y = top + ROM_GAMES * row_h + 30;
+    if (!scan->listed)
+        overlayTextCentered(OVERLAY_WIDTH / 2, y, "The ROM folder could not be read.", 30, RED);
+    else {
+        unsigned others = 0;
+        for (unsigned i = 0; i < scan->count; ++i) others += scan->files[i].game < 0;
+        if (others) overlayText(left, y, "Other files in the ROM folder:", 28, DIM);
+        unsigned shown = 0;
+        for (unsigned i = 0; i < scan->count && shown < 3; ++i) {
+            if (scan->files[i].game >= 0) continue;
+            char line[300];
+            snprintf(line, sizeof(line), "%s  -  %s", scan->files[i].file, scan->files[i].note);
+            overlayTextFit(left + 30, y + 38 + 34 * (float)shown++, line, 26, width - 30, SOFT);
+        }
+        if (others > shown || scan->more) {
+            char line[80];
+            snprintf(line, sizeof(line), "... and %u more", others - shown + scan->more);
+            overlayText(left + 30, y + 38 + 34 * (float)shown, line, 26, DIM);
+        }
+    }
+    const float box_y = 790;
+    overlayRect(left, box_y, width, 165, 0x111D36FFu);
+    overlayText(left + 30, box_y + 18, "Upload your ROM files (.nds, .gba) over FTP to:", 30, SOFT);
+    overlayTextFit(left + 30, box_y + 62, upload_url, 38, width - 60, BLUE);
+    overlayText(left + 30, box_y + 116, "or run the installer on your PC and choose your ROM folder.", 28, DIM);
+    if (blocking)
+        overlayTextCentered(OVERLAY_WIDTH / 2, 995, "\x01 Check again          \x02 Start anyway", 34, TEXT);
+    else
+        overlayTextCentered(OVERLAY_WIDTH / 2, 995, "Release \x03 to go back", 30, DIM);
+}

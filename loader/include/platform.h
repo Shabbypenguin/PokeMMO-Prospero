@@ -60,6 +60,8 @@ void platformDirectoryClose(PlatformDirectory *directory);
 // ---- network ----------------------------------------------------------------------------------------------------------------------
 // Name to IPv4 address (network order). 0, or a negative glibc EAI_* value.
 int platformResolveIPv4(const char *name, uint32_t *address);
+// The console's own IPv4 address on the local network, as text ("192.168.1.20"); false when it has none.
+bool platformLocalIPv4(char out[16]);
 
 // HTTP(S) requests, one at a time per handle (PS5: the system's libSceHttp, certificates checked; PC: plain http:// only, for
 // tests). `head` asks for the headers alone. range_end < 0: no Range header. On success the request has been sent and the
