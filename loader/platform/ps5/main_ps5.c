@@ -16,6 +16,7 @@
 #include "loading_screen.h"
 #include "overlay.h"
 #include "platform.h"
+#include "updater.h"
 #include "prospero_version.h"  // PROSPERO_VERSION, PROSPERO_TITLE_ID (generated at build time)
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
@@ -37,7 +38,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define LOADER_MILESTONE "loader-14"
+#define LOADER_MILESTONE "loader-15"
 // ps5-opengl's app heap (malloc of the loader and of everything the client allocates with malloc): from direct memory.
 const size_t ps5_opengl_heap_size = 768u << 20;
 
@@ -66,9 +67,11 @@ typedef struct {
 } Step;
 // loader-8: the loading screen shows one bar; these are the details behind it (hold Triangle). The storage probes of loader-1
 // (title folder writes, 1 GiB in /download0) and the audio beep of loader-4 answered their questions and are gone.
+// loader-15: the system-module and HTTPS probes gave way to the client updater (client.update); client.dev is the developer copy
+// uploaded by the installer (--client).
 static Step steps[] = {
-    {"fs.list.app0", NOT_RUN}, {"fs.list.roms", NOT_RUN}, {"fs.romread", NOT_RUN},   {"sys.modules", NOT_RUN}, {"net.https", NOT_RUN},
-    {"client.install", NOT_RUN}, {"client.map", NOT_RUN},  {"client.start", NOT_RUN}, {"client.end", NOT_RUN},
+    {"fs.list.app0", NOT_RUN}, {"fs.list.roms", NOT_RUN}, {"fs.romread", NOT_RUN},  {"client.dev", NOT_RUN},
+    {"client.update", NOT_RUN}, {"client.map", NOT_RUN},  {"client.start", NOT_RUN}, {"client.end", NOT_RUN},
 };
 #define STEP_COUNT (sizeof(steps) / sizeof(*steps))
 static void mark(const char *name, int state) {
@@ -121,42 +124,6 @@ static void guardInstall(void) {
         }                                                          \
         (faulted) = signal_number_;                                \
     } while (0)
-
-// Runs a check on its own thread and gives up waiting after `seconds` (the thread is then left behind).
-typedef struct {
-    void (*function)(void);
-    _Atomic bool done;
-} Timed;
-static void *timedMain(void *argument) {
-    Timed *timed = argument;
-    timed->function();
-    atomic_store(&timed->done, true);
-    return NULL;
-}
-static bool runWithLimit(void (*function)(void), unsigned seconds, const char *step) {
-    Timed *timed = calloc(1, sizeof(*timed));  // leaked on purpose when the thread is left behind
-    timed->function = function;
-    pthread_t thread;
-    pthread_attr_t attributes;
-    pthread_attr_init(&attributes);
-    pthread_attr_setstacksize(&attributes, 1u << 20);
-    pthread_attr_setdetachstate(&attributes, PTHREAD_CREATE_DETACHED);
-    int rc = pthread_create(&thread, &attributes, timedMain, timed);
-    pthread_attr_destroy(&attributes);
-    if (rc) {
-        say("%s: thread failed %d", step, rc);
-        return false;
-    }
-    for (unsigned waited = 0; waited < seconds * 10; ++waited) {
-        if (atomic_load(&timed->done)) {
-            free(timed);
-            return true;
-        }
-        sceKernelUsleep(100000);
-    }
-    say("%s: no answer after %u s, left running", step, seconds);
-    return false;
-}
 
 // ---- file checks -------------------------------------------------------------------------------------------------------------------
 static unsigned listFolder(const char *step, const char *path, char names[][256], unsigned max) {
@@ -220,150 +187,6 @@ static void checkRoms(char names[][256], unsigned count) {
     mark("fs.romread", readable == count ? PASS : FAIL);
 }
 
-// ---- system modules: can a title load them at run time, and from which path? ----------------------------------------------------
-static int loadModule(const char *name) {
-    const char *word = sceKernelGetFsSandboxRandomWord();
-    char paths[4][256];
-    snprintf(paths[0], 256, "%s", name);
-    snprintf(paths[1], 256, "/system/common/lib/%s", name);
-    snprintf(paths[2], 256, "/%s/common/lib/%s", word ? word : "?", name);
-    snprintf(paths[3], 256, "/system_ex/common_ex/lib/%s", name);
-    for (int i = 0; i < 4; ++i) {
-        int start_result = 0, handle = -1, faulted = 0;
-        GUARDED(faulted, handle = sceKernelLoadStartModule(paths[i], 0, NULL, 0, NULL, &start_result));
-        say("sys module %s -> 0x%x (start 0x%x)%s", paths[i], handle, start_result, faulted ? " FAULTED" : "");
-        if (handle >= 0 && !faulted) return handle;
-    }
-    return -1;
-}
-// Sony's NID of a symbol name: SHA-1 of the name and a fixed suffix, first 8 bytes reversed, base64 with '+' and '-'.
-static void sha1(const unsigned char *data, size_t length, unsigned char out[20]) {
-    uint32_t h[5] = {0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476, 0xc3d2e1f0};
-    unsigned char block[64];
-    size_t total = length + 9, blocks = (total + 63) / 64;
-    for (size_t b = 0; b < blocks; ++b) {
-        for (size_t i = 0; i < 64; ++i) {
-            size_t at = b * 64 + i;
-            block[i] = at < length ? data[at] : at == length ? 0x80 : 0;
-        }
-        if (b == blocks - 1)
-            for (int i = 0; i < 8; ++i) block[63 - i] = (unsigned char)(((uint64_t)length * 8) >> (8 * i));
-        uint32_t w[80];
-        for (int i = 0; i < 16; ++i) w[i] = (uint32_t)block[4 * i] << 24 | block[4 * i + 1] << 16 | block[4 * i + 2] << 8 | block[4 * i + 3];
-        for (int i = 16; i < 80; ++i) {
-            uint32_t x = w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16];
-            w[i] = x << 1 | x >> 31;
-        }
-        uint32_t a = h[0], bb = h[1], c = h[2], d = h[3], e = h[4];
-        for (int i = 0; i < 80; ++i) {
-            uint32_t f = i < 20 ? (bb & c) | (~bb & d) : i < 40 ? bb ^ c ^ d : i < 60 ? (bb & c) | (bb & d) | (c & d) : bb ^ c ^ d;
-            uint32_t k = i < 20 ? 0x5a827999 : i < 40 ? 0x6ed9eba1 : i < 60 ? 0x8f1bbcdc : 0xca62c1d6;
-            uint32_t t = (a << 5 | a >> 27) + f + e + k + w[i];
-            e = d, d = c, c = bb << 30 | bb >> 2, bb = a, a = t;
-        }
-        h[0] += a, h[1] += bb, h[2] += c, h[3] += d, h[4] += e;
-    }
-    for (int i = 0; i < 20; ++i) out[i] = (unsigned char)(h[i / 4] >> (24 - 8 * (i % 4)));
-}
-static void nidEncode(const char *name, char nid[12]) {
-    static const unsigned char suffix[16] = {0x51, 0x8d, 0x64, 0xa6, 0x35, 0xde, 0xd8, 0xc1, 0xe6, 0xb0, 0x39, 0xb1, 0xc3, 0xe5, 0x52, 0x30};
-    unsigned char input[256 + 16], digest[20], bytes[8];
-    size_t length = strlen(name) > 256 ? 256 : strlen(name);
-    memcpy(input, name, length);
-    memcpy(input + length, suffix, 16);
-    sha1(input, length + 16, digest);
-    for (int i = 0; i < 8; ++i) bytes[i] = digest[7 - i];
-    static const char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-";
-    uint64_t value = 0;
-    for (int i = 0; i < 8; ++i) value = value << 8 | bytes[i];
-    // 64 bits -> 11 characters (the last one carries 4 bits, shifted as base64 does)
-    for (int i = 0; i < 10; ++i) nid[i] = alphabet[(value >> (58 - 6 * i)) & 63];
-    nid[10] = alphabet[(value & 15) << 2];
-    nid[11] = 0;
-}
-static void *symbol(int module, const char *name) {
-    void *address = NULL;
-    if (module < 0) return NULL;
-    int rc = sceKernelDlsym(module, name, &address);
-    if (!rc && address) return address;
-    char nid[12];
-    nidEncode(name, nid);
-    int rc_nid = sceKernelDlsym(module, nid, &address);
-    say("sys symbol %s: by name 0x%x, by NID %s 0x%x -> %p", name, rc, nid, rc_nid, rc_nid ? NULL : address);
-    return rc_nid ? NULL : address;
-}
-static int ssl_module = -1, http_module = -1, audio_module = -1;
-static void checkModules(void) {
-    mark("sys.modules", RUNNING);
-    const char *word = sceKernelGetFsSandboxRandomWord();
-    say("sys sandbox word: %s", word ? word : "(none)");
-    ssl_module = loadModule("libSceSsl.sprx");
-    http_module = loadModule("libSceHttp.sprx");
-    audio_module = loadModule("libSceAudioOut.sprx");
-    int ime = loadModule("libSceImeDialog.sprx");  // the system keyboard: probe-3 could not load it by name or /system path
-    say("sys modules: ssl=%d http=%d audio=%d ime=%d", ssl_module, http_module, audio_module, ime);
-    mark("sys.modules", ssl_module >= 0 && http_module >= 0 && audio_module >= 0 ? PASS : INFO);
-}
-
-// ---- HTTPS through the system's own library (certificate checks included) -------------------------------------------------------------
-static void httpsBody(void) {
-    int (*sslInit)(size_t) = symbol(ssl_module, "sceSslInit");
-    int (*httpInit)(int, int, size_t) = symbol(http_module, "sceHttpInit");
-    int (*createTemplate)(int, const char *, int, int) = symbol(http_module, "sceHttpCreateTemplate");
-    int (*createConnection)(int, const char *, int) = symbol(http_module, "sceHttpCreateConnectionWithURL");
-    int (*createRequest)(int, int, const char *, uint64_t) = symbol(http_module, "sceHttpCreateRequestWithURL");
-    int (*sendRequest)(int, const void *, size_t) = symbol(http_module, "sceHttpSendRequest");
-    int (*statusCode)(int, int *) = symbol(http_module, "sceHttpGetStatusCode");
-    int (*allHeaders)(int, char **, size_t *) = symbol(http_module, "sceHttpGetAllResponseHeaders");
-    if (!sslInit || !httpInit || !createTemplate || !createConnection || !createRequest || !sendRequest || !statusCode) {
-        mark("net.https", FAIL);
-        return;
-    }
-    const char *url = "https://dl.pokemmo.com/download/PokeMMO-Client.zip";
-    int faulted = 0, net = -1, ssl = -1, http = -1, template_id = -1, connection = -1, request = -1, sent = -1, status = 0, got_status = -1;
-    GUARDED(faulted, {
-        sceNetInit();
-        net = sceNetPoolCreate("prospero-http", 128 * 1024, 0);
-        ssl = sslInit(256 * 1024);
-        http = httpInit(net, ssl, 64 * 1024);
-        template_id = createTemplate(http, "PokeMMO-Prospero/" PROSPERO_VERSION, 2 /* HTTP/1.1 */, 1);
-        connection = createConnection(template_id, url, 1);
-        request = createRequest(connection, 2 /* HEAD */, url, 0);
-        sent = sendRequest(request, NULL, 0);
-        got_status = statusCode(request, &status);
-    });
-    say("net https: pool=0x%x ssl=0x%x http=0x%x template=0x%x connection=0x%x request=0x%x send=0x%x status_rc=0x%x status=%d%s", net, ssl, http,
-        template_id, connection, request, sent, got_status, status, faulted ? " FAULTED" : "");
-    if (!faulted && !got_status && allHeaders) {
-        char *headers = NULL;
-        size_t length = 0;
-        int rc = -1;
-        GUARDED(faulted, rc = allHeaders(request, &headers, &length));
-        if (!faulted && !rc && headers) {
-            char line[256];
-            for (const char *cursor = headers; cursor < headers + length && *cursor;) {
-                size_t n = strcspn(cursor, "\r\n");
-                if (!strncasecmp(cursor, "etag", 4) || !strncasecmp(cursor, "content-length", 14) || !strncasecmp(cursor, "last-modified", 13)) {
-                    snprintf(line, sizeof(line), "%.*s", (int)n, cursor);
-                    say("net https header: %s", line);
-                }
-                cursor += n;
-                cursor += strspn(cursor, "\r\n");
-            }
-        }
-    }
-    mark("net.https", !faulted && status == 200 ? PASS : INFO);  // not needed yet: the client does its own HTTPS
-}
-static void checkHttps(void) {
-    mark("net.https", RUNNING);
-    if (ssl_module < 0 || http_module < 0) {
-        say("net https: the system HTTP/SSL modules could not be loaded (a bundled TLS library is the fallback)");
-        mark("net.https", INFO);
-        return;
-    }
-    if (!runWithLimit(httpsBody, 30, "net.https")) mark("net.https", INFO);
-}
-
 // ---- the client: copied from the title folder (dev builds) into the title storage, where it can write next to itself ------------------
 #define CLIENT_SOURCE "/app0/client"
 #define ROOT "/download0/root"
@@ -423,27 +246,23 @@ static void noteRevision(const char *revision) {
     size_t length = strcspn(revision, "\r\n");
     snprintf(client_revision, sizeof(client_revision), "%.*s", (int)(length < 60 ? length : 60), revision);
 }
+// Developer builds: the client the installer uploaded (--client) is copied in when nothing newer is installed already.
 static bool installClient(void) {
-    mark("client.install", RUNNING);
+    mark("client.dev", RUNNING);
     char source_revision[64] = "", installed_revision[64] = "";
-    if (!readSmall(CLIENT_SOURCE "/revision.txt", source_revision, sizeof(source_revision))) {
-        if (readSmall(GAME "/revision.txt", installed_revision, sizeof(installed_revision))) {
-            say("client install: no client in the title folder; using the installed revision %s", installed_revision);
-            noteRevision(installed_revision);
-            mark("client.install", INFO);
-            return true;
-        }
-        say("client install: no client found. Developer builds: run the installer with --client <PokeMMO-Client.zip>");
-        mark("client.install", FAIL);
-        return false;
-    }
     readSmall(GAME "/revision.txt", installed_revision, sizeof(installed_revision));
-    noteRevision(source_revision);
-    if (!strcmp(source_revision, installed_revision)) {
-        say("client install: revision %s already installed", installed_revision);
-        mark("client.install", PASS);
+    noteRevision(installed_revision);
+    if (!readSmall(CLIENT_SOURCE "/revision.txt", source_revision, sizeof(source_revision))) {
+        say("client dev: no client uploaded to the title folder (the updater provides it)");
+        mark("client.dev", INFO);
         return true;
     }
+    if (updaterCompareRevisions(source_revision, installed_revision) <= 0) {
+        say("client dev: uploaded revision %s, installed %s: nothing to copy", source_revision, installed_revision);
+        mark("client.dev", PASS);
+        return true;
+    }
+    noteRevision(source_revision);
     int fd = open(CLIENT_SOURCE "/manifest.txt", O_RDONLY);
     struct stat info;
     char *manifest = NULL;
@@ -454,7 +273,7 @@ static bool installClient(void) {
     if (fd >= 0) close(fd);
     if (!manifest) {
         say("client install: manifest.txt missing");
-        mark("client.install", FAIL);
+        mark("client.dev", FAIL);
         return false;
     }
     say("client install: revision %s -> %s", installed_revision[0] ? installed_revision : "(none)", source_revision);
@@ -495,8 +314,109 @@ static bool installClient(void) {
     free(buffer);
     free(manifest);
     say("client install: %s, %u files, %llu MiB in %.1f s", ok ? "done" : "FAILED", files, bytes >> 20, (double)(platformMonotonicNs() - start) / 1e9);
-    mark("client.install", ok ? PASS : FAIL);
+    mark("client.dev", ok ? PASS : FAIL);
     return ok;
+}
+
+// ---- the client updater (loader-15): the published client, read in place on PokeMMO's server (updater.c) ------------------------
+// A newer revision is offered on the loading screen (Cross: download, Circle: skip; download after a few seconds); without any
+// client installed it is downloaded straight away. The published ETag of the installed revision is kept, so an unchanged
+// client costs one HEAD request.
+#define UPDATE_STAGING ROOT "/update"
+#define UPDATE_ETAG ROOT "/update-etag"
+#define PROMPT_SECONDS 6
+enum { UPDATE_IDLE, UPDATE_CHECKING, UPDATE_PROMPT, UPDATE_DOWNLOADING, UPDATE_APPLYING };
+enum { CHOICE_NONE, CHOICE_DOWNLOAD, CHOICE_SKIP };
+static _Atomic int update_phase, update_choice;
+static _Atomic uint64_t prompt_deadline_ns;
+static UpdaterProgress update_progress;
+static char update_question[128];
+static const char *_Atomic start_problem, *_Atomic start_advice;  // why the game cannot start, for the loading screen
+static char update_warning[160];
+static _Atomic bool update_warning_set;
+static bool writeSmall(const char *path, const char *text) {
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) return false;
+    bool ok = write(fd, text, strlen(text)) == (ssize_t)strlen(text);
+    close(fd);
+    return ok;
+}
+static void updateClient(void) {
+    mark("client.update", RUNNING);
+    atomic_store(&update_phase, UPDATE_CHECKING);
+    char installed[64] = "", known_etag[160] = "", error[256] = "";
+    bool have_client = readSmall(GAME "/revision.txt", installed, sizeof(installed));
+    readSmall(UPDATE_ETAG, known_etag, sizeof(known_etag));
+    UpdaterRemote remote;
+    int checked = updaterCheck(UPDATER_URL, have_client ? known_etag : NULL, &remote, error, sizeof(error));
+    say("client update: installed %s, check %d, published %s (etag %s)%s%s", have_client ? installed : "(none)", checked, remote.revision[0] ? remote.revision : "-",
+        remote.etag, error[0] ? ": " : "", error);
+    if (checked < 0) {
+        atomic_store(&update_phase, UPDATE_IDLE);
+        if (have_client) {
+            snprintf(update_warning, sizeof(update_warning), "Could not check for updates: starting revision %s.", installed);
+            atomic_store(&update_warning_set, true);
+            mark("client.update", INFO);
+        } else {
+            atomic_store(&start_advice, "Check the console's internet connection, then close the title and start it again.");
+            atomic_store(&start_problem, "PokeMMO could not be downloaded");
+            mark("client.update", FAIL);
+        }
+        updaterFree(&remote);
+        return;
+    }
+    bool newer = checked == 0 && updaterCompareRevisions(remote.revision, installed) > 0;
+    if (!newer) {
+        if (checked == 0 && !updaterCompareRevisions(remote.revision, installed)) writeSmall(UPDATE_ETAG, remote.etag);
+        say("client update: up to date");
+        atomic_store(&update_phase, UPDATE_IDLE);
+        mark("client.update", PASS);
+        updaterFree(&remote);
+        return;
+    }
+    if (have_client) {
+        snprintf(update_question, sizeof(update_question), "PokeMMO update: revision %s to %s (%llu MB)", installed, remote.revision,
+                 (unsigned long long)(remote.download_bytes >> 20));
+        atomic_store(&update_choice, CHOICE_NONE);
+        atomic_store(&prompt_deadline_ns, platformMonotonicNs() + PROMPT_SECONDS * 1000000000ull);
+        atomic_store(&update_phase, UPDATE_PROMPT);
+        while (atomic_load(&update_choice) == CHOICE_NONE && platformMonotonicNs() < atomic_load(&prompt_deadline_ns)) sceKernelUsleep(20000);
+        if (atomic_load(&update_choice) == CHOICE_SKIP) {
+            say("client update: skipped by the player");
+            snprintf(update_warning, sizeof(update_warning), "Update skipped: starting revision %s.", installed);
+            atomic_store(&update_warning_set, true);
+            atomic_store(&update_phase, UPDATE_IDLE);
+            mark("client.update", INFO);
+            updaterFree(&remote);
+            return;
+        }
+    }
+    atomic_store(&update_phase, UPDATE_DOWNLOADING);
+    uint64_t start = platformMonotonicNs();
+    int result = updaterDownload(UPDATER_URL, &remote, UPDATE_STAGING, &update_progress, error, sizeof(error));
+    double seconds = (double)(platformMonotonicNs() - start) / 1e9;
+    say("client update: download %s, %llu MB in %.0f s%s%s", result ? "FAILED" : "done", (unsigned long long)(atomic_load(&update_progress.done) >> 20), seconds,
+        error[0] ? ": " : "", error);
+    if (!result) {
+        atomic_store(&update_phase, UPDATE_APPLYING);
+        result = updaterApply(&remote, UPDATE_STAGING, GAME, error, sizeof(error));
+        say("client update: install %s%s%s", result ? "FAILED" : "done", error[0] ? ": " : "", error);
+    }
+    atomic_store(&update_phase, UPDATE_IDLE);
+    if (!result) {
+        writeSmall(UPDATE_ETAG, remote.etag);
+        noteRevision(remote.revision);
+        mark("client.update", PASS);
+    } else if (have_client) {
+        snprintf(update_warning, sizeof(update_warning), "The update failed: starting revision %s.", installed);
+        atomic_store(&update_warning_set, true);
+        mark("client.update", INFO);
+    } else {
+        atomic_store(&start_advice, "Check the console's internet connection and free space, then close the title and start it again.");
+        atomic_store(&start_problem, "PokeMMO could not be downloaded");
+        mark("client.update", FAIL);
+    }
+    updaterFree(&remote);
 }
 
 // ---- the game's settings: a copy where FTP can see it ---------------------------------------------------------------------------
@@ -723,36 +643,60 @@ static void loadingView(LoadingView *view, LoadingStep *step_view, char *detail,
     *view = (LoadingView){.status = "Getting ready", .detail = detail, .version = version, .revision = client_revision,
                           .log_path = "/data/homebrew/" PROSPERO_TITLE_ID "/prospero.log", .steps = step_view, .step_count = STEP_COUNT, .frame = frame};
     detail[0] = 0;
-    static const char *const checks[] = {"fs.list.app0", "fs.list.roms", "fs.romread", "sys.modules", "net.https"};
+    static const char *const checks[] = {"fs.list.app0", "fs.list.roms", "fs.romread"};
     unsigned checked = 0;
-    for (unsigned i = 0; i < 5; ++i) checked += stepState(checks[i]) != NOT_RUN && stepState(checks[i]) != RUNNING;
-    view->fraction = 0.08f * (float)checked / 5.0f;
-    if (checked < 5) view->status = checked < 3 ? "Checking files" : "Checking the system";
-    int install = stepState("client.install");
-    if (install == RUNNING) {
+    for (unsigned i = 0; i < 3; ++i) checked += stepState(checks[i]) != NOT_RUN && stepState(checks[i]) != RUNNING;
+    view->fraction = 0.08f * (float)checked / 3.0f;
+    if (checked < 3) view->status = "Checking files";
+    int dev = stepState("client.dev"), update = stepState("client.update"), phase = atomic_load(&update_phase);
+    if (dev == RUNNING) {
         unsigned long long done = atomic_load(&install_done), total = atomic_load(&install_total);
         view->status = "Installing PokeMMO";
         if (total) {
             view->fraction = 0.08f + 0.52f * (float)((double)done / (double)total);
             snprintf(detail, detail_size, "%llu of %llu MB", done >> 20, total >> 20);
         }
-    } else if (install == PASS || install == INFO) {
+    } else if (update == RUNNING) {
+        view->fraction = 0.08f;
+        if (phase == UPDATE_CHECKING)
+            view->status = "Checking for updates";
+        else if (phase == UPDATE_PROMPT) {
+            static char choices[96];
+            uint64_t now = platformMonotonicNs(), deadline = atomic_load(&prompt_deadline_ns);
+            unsigned left = deadline > now ? (unsigned)((deadline - now) / 1000000000ull) + 1 : 0;
+            snprintf(choices, sizeof(choices), "\x01 Download     \x02 Skip          (downloading in %u)", left);
+            view->question = update_question;
+            view->choices = choices;
+        } else if (phase == UPDATE_DOWNLOADING) {
+            uint64_t done = atomic_load(&update_progress.done), total = atomic_load(&update_progress.total);
+            view->status = "Downloading PokeMMO";
+            if (total) {
+                view->fraction = 0.08f + 0.52f * (float)((double)done / (double)total);
+                snprintf(detail, detail_size, "%llu of %llu MB", (unsigned long long)(done >> 20), (unsigned long long)(total >> 20));
+            }
+        } else if (phase == UPDATE_APPLYING) {
+            view->fraction = 0.6f;
+            view->status = "Installing the update";
+        }
+    } else if (update != NOT_RUN && update != FAIL) {
         uint64_t started = atomic_load(&client_started_ns);
         float seconds = started ? (float)((double)(platformMonotonicNs() - started) / 1e9) : 0.0f;
         view->fraction = 0.6f + 0.38f * (1.0f - expf(-seconds / 20.0f));  // the client's start has no progress to report: an easing guess
         view->status = "Starting PokeMMO";
+        if (atomic_load(&update_warning_set)) view->warning = update_warning;
     }
+    const char *problem = atomic_load(&start_problem);
     if (stepState("fs.list.app0") == FAIL) {
         view->problem = "The title's files cannot be read";
         view->advice = "Run the installer on your computer again.";
-    } else if (install == FAIL) {
-        view->problem = "PokeMMO is not installed yet";
-        view->advice = "Run the installer on your computer and pick this console (developer builds: --client PokeMMO-Client.zip).";
+    } else if (problem) {
+        view->problem = problem;
+        view->advice = atomic_load(&start_advice);
     } else if (atomic_load(&game_finished) || atomic_load(&fatal_signals)) {
         view->problem = "PokeMMO stopped while starting";
         view->advice = "Close the title with the PS button and start it again. If it keeps happening, send prospero.log from the title folder (FTP).";
     }
-    if (stepState("fs.romread") == INFO && !atomic_load(&rom_count)) view->warning = "No ROMs found: add them with the installer to play.";
+    if (!view->warning && stepState("fs.romread") == INFO && !atomic_load(&rom_count)) view->warning = "No ROMs found: add them with the installer to play.";
 }
 // The same screen over the game's first (black) frames, on the game's thread and context.
 static void drawLoadingInGame(void) {
@@ -773,7 +717,15 @@ static void drawScreen(unsigned frame) {
     char detail[96];
     loadingView(&view, step_view, detail, sizeof(detail), frame);
     PlatformPad pad;
-    view.details = platformPadRead(&pad) && (pad.buttons & PLATFORM_PAD_TRIANGLE);
+    bool read = platformPadRead(&pad);
+    view.details = read && (pad.buttons & PLATFORM_PAD_TRIANGLE);
+    static uint32_t before = ~0u;  // what is held when the question appears does not answer it
+    uint32_t pressed = read ? pad.buttons & ~before : 0;
+    before = read ? pad.buttons : 0;
+    if (atomic_load(&update_phase) == UPDATE_PROMPT) {
+        if (pressed & PLATFORM_PAD_CROSS) atomic_store(&update_choice, CHOICE_DOWNLOAD);
+        if (pressed & PLATFORM_PAD_CIRCLE) atomic_store(&update_choice, CHOICE_SKIP);
+    }
     loadingScreenDraw(&view);
     overlayEnd();
 }
@@ -786,9 +738,20 @@ static void *workMain(void *argument) {
     unsigned roms = listFolder("fs.list.roms", "/app0/roms", rom_names, 32);
     atomic_store(&rom_count, roms);
     checkRoms(rom_names, roms > 32 ? 32 : roms);
-    checkModules();
-    checkHttps();
-    if (installClient()) {
+    // The installer's --redownload-client: forget the installed client (its files are overwritten, settings stay) and skip the
+    // developer copy this once, so the updater downloads it.
+    bool redownload = !unlink("/app0/redownload-client");
+    if (redownload) {
+        unlink(GAME "/revision.txt");
+        unlink(UPDATE_ETAG);
+        client_revision[0] = 0;
+        say("client: the installer asked for a fresh download");
+        mark("client.dev", INFO);
+    } else
+        installClient();
+    updateClient();
+    char installed[64];
+    if (readSmall(GAME "/revision.txt", installed, sizeof(installed))) {
         applyDefaults();
         pthread_t game;
         pthread_attr_t attributes;
@@ -796,6 +759,9 @@ static void *workMain(void *argument) {
         pthread_attr_setstacksize(&attributes, 1u << 20);
         if (!pthread_create(&game, &attributes, gameThread, NULL)) pthread_detach(game);
         pthread_attr_destroy(&attributes);
+    } else if (!atomic_load(&start_problem)) {
+        atomic_store(&start_advice, "Check the console's internet connection, then close the title and start it again.");
+        atomic_store(&start_problem, "PokeMMO is not installed yet");
     }
     return NULL;
 }
@@ -831,7 +797,7 @@ int main(void) {
         }
         if (frame == 1 || frame % 3750 == 0) backupSettings();  // about once a minute
         if (atomic_load(&fatal_signals) && atomic_load(&steps[STEP_COUNT - 1].state) != FAIL) mark("client.end", FAIL);
-        bool install_failed = stepState("client.install") == FAIL;
+        bool install_failed = atomic_load(&start_problem) != NULL;
         if ((atomic_load(&game_finished) || install_failed) && !reported) {
             reported = true;
             say("DONE. Close the title with the PS button. The full log is above and in /data/homebrew/" PROSPERO_TITLE_ID "/prospero.log (FTP).");

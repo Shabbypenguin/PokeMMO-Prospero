@@ -55,5 +55,7 @@ python3 pokemmo_prospero_install.py --yes --package pokemmo-prospero-probe-PPSA2
 ```
 
 `--client PokeMMO-Client.zip` (developer builds only, such as the loader's milestone builds) uploads the Linux
-part of the official client into the title folder (`client/`); release builds download the client on the console.
-`--no-roms` skips the ROM step. `python3 pokemmo_prospero_install.py --help` lists every option.
+part of the official client into the title folder (`client/`); the console also downloads and updates the client
+itself, and uses whichever revision is newer.
+`--redownload-client` makes the console forget its installed client and download it again on its next start (settings
+stay). `--no-roms` skips the ROM step. `python3 pokemmo_prospero_install.py --help` lists every option.

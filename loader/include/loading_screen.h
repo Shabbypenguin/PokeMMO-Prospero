@@ -17,6 +17,8 @@ typedef struct {
     const char *problem;  // set when starting cannot go on: the bar turns red
     const char *advice;   // what to do about the problem
     const char *warning;  // a note that does not stop anything (no ROMs)
+    const char *question; // a choice for the player (an update), shown instead of the status
+    const char *choices;  // its buttons
     const char *version;  // bottom right
     const char *revision;
     const char *log_path;

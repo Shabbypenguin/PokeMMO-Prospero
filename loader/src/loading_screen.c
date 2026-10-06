@@ -79,6 +79,10 @@ void loadingScreenDraw(const LoadingView *view) {
         overlayRect(bar_x, bar_y, bar_w * (fraction > 0.05f ? fraction : 0.05f), bar_h, RED);
         overlayTextCentered(OVERLAY_WIDTH / 2, 790, view->problem, 44, TEXT);
         if (view->advice) drawWrapped(860, view->advice, 32, 1100, 0xA8B8D8FFu);
+    } else if (view->question) {
+        overlayRect(bar_x, bar_y, bar_w * fraction, bar_h, BLUE);
+        overlayTextCentered(OVERLAY_WIDTH / 2, 790, view->question, 40, TEXT);
+        if (view->choices) overlayTextCentered(OVERLAY_WIDTH / 2, 855, view->choices, 34, SOFT);
     } else {
         overlayRect(bar_x, bar_y, bar_w * fraction, bar_h, BLUE);
         const char *status = view->status ? view->status : "";

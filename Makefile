@@ -12,7 +12,7 @@ CLIENT_ZIP ?= private/PokeMMO-Client.zip
 PS5_HOST ?=
 FTP_PORT ?= 2121
 
-.PHONY: help env-check probe package-probe deploy-probe loader package-loader host-loader host-run overlay-preview fetch-client analyze clean
+.PHONY: help env-check probe package-probe deploy-probe loader package-loader host-loader host-run overlay-preview updater-test fetch-client analyze clean
 
 help:
 	@echo "make probe          build the hardware probe title  (PROBE_LOG_HOST=192.168.x.y optional)"
@@ -80,6 +80,16 @@ overlay-preview:
 	$${CC:-clang} -std=gnu11 -O1 -g -Wall -Wextra -Wno-unused-parameter -Iloader/include -o build/overlay-preview/preview tools/overlay_preview.c \
 		$(OVERLAY_SOURCES) -lEGL -lGL -lz -lm
 	EGL_PLATFORM=surfaceless build/overlay-preview/preview build/overlay-preview
+
+# The client updater against a local copy of the client zip served by tools/range_server.py (plain HTTP, with drops).
+UPDATER_ZIP ?= private/PokeMMO-Client.zip
+updater-test:
+	@mkdir -p build/updater-test && rm -rf build/updater-test/staging build/updater-test/game
+	$${CC:-clang} -std=gnu11 -O1 -g -Wall -Wextra -Wno-unused-parameter -D_GNU_SOURCE -Iloader/include -o build/updater-test/updater_test \
+		tools/updater_test.c loader/src/updater.c loader/src/diagnostics.c loader/platform/host/platform_host.c -lz -lpthread
+	python3 tools/range_server.py $(UPDATER_ZIP) 8765 --drop-every 30000000 & server=$$!; sleep 1; \
+	build/updater-test/updater_test http://127.0.0.1:8765/PokeMMO-Client.zip build/updater-test/staging build/updater-test/game; status=$$?; \
+	kill $$server; exit $$status
 
 host-run: host-loader
 	@[[ -f "$(CLIENT_ZIP)" ]] || { echo "no client at $(CLIENT_ZIP): run 'make fetch-client' first"; exit 2; }

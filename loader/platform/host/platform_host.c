@@ -16,6 +16,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
+#include <sys/socket.h>
 #include <sys/mman.h>
 #include <sys/random.h>
 #include <sys/syscall.h>
@@ -166,6 +168,108 @@ int platformResolveIPv4(const char *name, uint32_t *address) {
 int platformOpenUrl(const char *url) {
     (void)url;
     return -1;
+}
+
+// Plain http:// only: enough to test the updater against a local server (tools/range_server.py). HTTP/1.0, so the body is
+// whatever follows the headers until the server closes.
+struct PlatformHttp {
+    int socket;
+    int64_t length;
+    char headers[8192];
+    char *body;        // bytes read past the headers, not yet returned
+    size_t body_size;
+};
+PlatformHttp *platformHttpOpen(const char *url, bool head, int64_t range_start, int64_t range_end, int *status, char *error, size_t error_size) {
+    *status = 0;
+    char host[256], path[1024] = "/";
+    unsigned port = 80;
+    if (sscanf(url, "http://%255[^:/]:%u%1023s", host, &port, path) < 2 && sscanf(url, "http://%255[^:/]%1023s", host, path) < 1) {
+        snprintf(error, error_size, "only http:// addresses on a PC");
+        return NULL;
+    }
+    struct addrinfo hints = {0}, *list = NULL;
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    char service[16];
+    snprintf(service, sizeof(service), "%u", port);
+    if (getaddrinfo(host, service, &hints, &list) || !list) {
+        snprintf(error, error_size, "cannot resolve %s", host);
+        return NULL;
+    }
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0 || connect(fd, list->ai_addr, list->ai_addrlen)) {
+        snprintf(error, error_size, "connect failed errno=%d", errno);
+        freeaddrinfo(list);
+        if (fd >= 0) close(fd);
+        return NULL;
+    }
+    freeaddrinfo(list);
+    char request[1400], range[80] = "";
+    if (range_end >= 0) snprintf(range, sizeof(range), "Range: bytes=%lld-%lld\r\n", (long long)range_start, (long long)range_end);
+    int length = snprintf(request, sizeof(request), "%s %s HTTP/1.0\r\nHost: %s\r\n%sUser-Agent: PokeMMO-Prospero\r\n\r\n", head ? "HEAD" : "GET", path, host, range);
+    if (write(fd, request, (size_t)length) != length) {
+        snprintf(error, error_size, "send failed");
+        close(fd);
+        return NULL;
+    }
+    PlatformHttp *h = calloc(1, sizeof(*h));
+    h->socket = fd;
+    h->length = -1;
+    size_t have = 0;
+    char *end = NULL;
+    while (!end && have < sizeof(h->headers) - 1) {
+        ssize_t got = read(fd, h->headers + have, sizeof(h->headers) - 1 - have);
+        if (got <= 0) break;
+        have += (size_t)got;
+        h->headers[have] = 0;
+        end = strstr(h->headers, "\r\n\r\n");
+    }
+    if (!end || sscanf(h->headers, "HTTP/%*s %d", status) != 1) {
+        snprintf(error, error_size, "bad response");
+        platformHttpClose(h);
+        return NULL;
+    }
+    size_t header_size = (size_t)(end + 4 - h->headers);
+    h->body_size = have - header_size;
+    h->body = malloc(h->body_size + 1);
+    memcpy(h->body, h->headers + header_size, h->body_size);
+    *end = 0;
+    char value[64];
+    if (platformHttpHeader(h, "Content-Length", value, sizeof(value))) h->length = atoll(value);
+    return h;
+}
+int64_t platformHttpLength(PlatformHttp *h) { return h->length; }
+bool platformHttpHeader(PlatformHttp *h, const char *name, char *value, size_t size) {
+    size_t name_length = strlen(name);
+    for (const char *line = strstr(h->headers, "\r\n"); line && *line;) {
+        line += strspn(line, "\r\n");
+        size_t length = strcspn(line, "\r\n");
+        if (length > name_length && line[name_length] == ':' && !strncasecmp(line, name, name_length)) {
+            const char *start = line + name_length + 1;
+            while (*start == ' ') ++start;
+            snprintf(value, size, "%.*s", (int)(line + length - start), start);
+            return true;
+        }
+        line += length;
+    }
+    return false;
+}
+int64_t platformHttpRead(PlatformHttp *h, void *buffer, size_t size) {
+    if (h->body_size) {
+        size_t n = h->body_size < size ? h->body_size : size;
+        memcpy(buffer, h->body, n);
+        memmove(h->body, h->body + n, h->body_size - n);
+        h->body_size -= n;
+        return (int64_t)n;
+    }
+    ssize_t got = read(h->socket, buffer, size);
+    return got < 0 ? -errno : got;
+}
+void platformHttpClose(PlatformHttp *h) {
+    if (!h) return;
+    close(h->socket);
+    free(h->body);
+    free(h);
 }
 
 void platformFatal(const char *message) {

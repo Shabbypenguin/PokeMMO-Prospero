@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -402,6 +403,127 @@ int platformResolveIPv4(const char *name, uint32_t *address) {
     *address = result.s_addr;
     return 0;
 }
+
+// ---- HTTP(S): the system's libSceHttp over libSceSsl, linked directly (loader-15) -----------------------------------------------------
+// The system checks the server's certificate against its own store. One template per request keeps requests independent of
+// each other (the updater makes a handful).
+int sceSslInit(size_t pool_size);
+int sceHttpInit(int net_pool_id, int ssl_context, size_t pool_size);
+int sceHttpCreateTemplate(int http_context, const char *user_agent, int http_version, int automatic_proxy);
+int sceHttpCreateConnectionWithURL(int template_id, const char *url, int keep_alive);
+int sceHttpCreateRequestWithURL(int connection, int method, const char *url, uint64_t content_length);
+int sceHttpAddRequestHeader(int id, const char *name, const char *value, uint32_t mode);
+int sceHttpSendRequest(int request, const void *data, size_t size);
+int sceHttpGetStatusCode(int request, int *status);
+int sceHttpGetResponseContentLength(int request, int *result, uint64_t *length);
+int sceHttpGetAllResponseHeaders(int request, char **headers, size_t *size);
+int sceHttpReadData(int request, void *data, size_t size);
+int sceHttpSetConnectTimeOut(int id, uint32_t microseconds);
+int sceHttpSetRecvTimeOut(int id, uint32_t microseconds);
+int sceHttpSetResolveTimeOut(int id, uint32_t microseconds);
+int sceHttpDeleteRequest(int request);
+int sceHttpDeleteConnection(int connection);
+int sceHttpDeleteTemplate(int template_id);
+static pthread_once_t http_once = PTHREAD_ONCE_INIT;
+static int http_context = -1, http_init_ssl = 0, http_init_http = 0;
+static void httpInit(void) {
+    pthread_once(&net_once, netInit);
+    int pool = sceNetPoolCreate("prospero-http", 128 * 1024, 0);
+    int ssl = sceSslInit(512 * 1024);
+    http_init_ssl = ssl;
+    http_context = pool >= 0 && ssl >= 0 ? sceHttpInit(pool, ssl, 256 * 1024) : -1;
+    http_init_http = http_context;
+    char line[160];
+    snprintf(line, sizeof(line), "http init: pool=0x%x ssl=0x%x http=0x%x", (unsigned)pool, (unsigned)ssl, (unsigned)http_context);
+    platformLogLine(line);
+}
+struct PlatformHttp {
+    int template_id, connection, request;
+    int64_t length;
+    char *headers;
+};
+void platformHttpClose(PlatformHttp *h) {
+    if (!h) return;
+    if (h->request >= 0) sceHttpDeleteRequest(h->request);
+    if (h->connection >= 0) sceHttpDeleteConnection(h->connection);
+    if (h->template_id >= 0) sceHttpDeleteTemplate(h->template_id);
+    free(h->headers);
+    free(h);
+}
+PlatformHttp *platformHttpOpen(const char *url, bool head, int64_t range_start, int64_t range_end, int *status, char *error, size_t error_size) {
+    pthread_once(&http_once, httpInit);
+    *status = 0;
+    if (http_context < 0) {
+        snprintf(error, error_size, "the system HTTP library did not start (ssl=0x%x http=0x%x)", (unsigned)http_init_ssl, (unsigned)http_init_http);
+        return NULL;
+    }
+    PlatformHttp *h = calloc(1, sizeof(*h));
+    if (!h) {
+        snprintf(error, error_size, "out of memory");
+        return NULL;
+    }
+    h->template_id = h->connection = h->request = -1;
+    h->length = -1;
+    int rc = h->template_id = sceHttpCreateTemplate(http_context, "PokeMMO-Prospero", 2 /* HTTP/1.1 */, 1);
+    const char *stage = "template";
+    if (rc >= 0) {
+        sceHttpSetResolveTimeOut(h->template_id, 15u * 1000000u);
+        sceHttpSetConnectTimeOut(h->template_id, 15u * 1000000u);
+        sceHttpSetRecvTimeOut(h->template_id, 30u * 1000000u);
+        stage = "connection";
+        rc = h->connection = sceHttpCreateConnectionWithURL(h->template_id, url, 1);
+    }
+    if (rc >= 0) {
+        stage = "request";
+        rc = h->request = sceHttpCreateRequestWithURL(h->connection, head ? 2 /* HEAD */ : 0 /* GET */, url, 0);
+    }
+    if (rc >= 0 && range_end >= 0) {
+        char range[64];
+        snprintf(range, sizeof(range), "bytes=%lld-%lld", (long long)range_start, (long long)range_end);
+        stage = "range header";
+        rc = sceHttpAddRequestHeader(h->request, "Range", range, 0 /* overwrite */);
+    }
+    if (rc >= 0) {
+        stage = "send";
+        rc = sceHttpSendRequest(h->request, NULL, 0);
+    }
+    if (rc >= 0) {
+        stage = "status";
+        rc = sceHttpGetStatusCode(h->request, status);
+    }
+    if (rc < 0) {
+        snprintf(error, error_size, "%s failed (0x%08x)", stage, (unsigned)rc);
+        platformHttpClose(h);
+        return NULL;
+    }
+    int has_length = -1;
+    uint64_t length = 0;
+    if (sceHttpGetResponseContentLength(h->request, &has_length, &length) >= 0 && has_length == 0) h->length = (int64_t)length;
+    char *headers = NULL;
+    size_t size = 0;
+    if (sceHttpGetAllResponseHeaders(h->request, &headers, &size) >= 0 && headers && (h->headers = malloc(size + 1))) {
+        memcpy(h->headers, headers, size);
+        h->headers[size] = 0;
+    }
+    return h;
+}
+int64_t platformHttpLength(PlatformHttp *h) { return h->length; }
+bool platformHttpHeader(PlatformHttp *h, const char *name, char *value, size_t size) {
+    size_t name_length = strlen(name);
+    for (const char *line = h->headers; line && *line;) {
+        size_t length = strcspn(line, "\r\n");
+        if (length > name_length && line[name_length] == ':' && !strncasecmp(line, name, name_length)) {
+            const char *start = line + name_length + 1;
+            while (*start == ' ') ++start;
+            snprintf(value, size, "%.*s", (int)(line + length - start), start);
+            return true;
+        }
+        line += length;
+        line += strspn(line, "\r\n");
+    }
+    return false;
+}
+int64_t platformHttpRead(PlatformHttp *h, void *buffer, size_t size) { return sceHttpReadData(h->request, buffer, size); }
 
 // ---- controller -------------------------------------------------------------------------------------------------------------------
 int sceUserServiceInitialize(void *parameters);

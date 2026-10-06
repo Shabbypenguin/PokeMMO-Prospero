@@ -61,6 +61,16 @@ void platformDirectoryClose(PlatformDirectory *directory);
 // Name to IPv4 address (network order). 0, or a negative glibc EAI_* value.
 int platformResolveIPv4(const char *name, uint32_t *address);
 
+// HTTP(S) requests, one at a time per handle (PS5: the system's libSceHttp, certificates checked; PC: plain http:// only, for
+// tests). `head` asks for the headers alone. range_end < 0: no Range header. On success the request has been sent and the
+// response headers read; *status is the HTTP status. NULL on failure, with a reason in `error`.
+typedef struct PlatformHttp PlatformHttp;
+PlatformHttp *platformHttpOpen(const char *url, bool head, int64_t range_start, int64_t range_end, int *status, char *error, size_t error_size);
+int64_t platformHttpLength(PlatformHttp *request);  // Content-Length, -1 when not given
+bool platformHttpHeader(PlatformHttp *request, const char *name, char *value, size_t size);  // case-insensitive name
+int64_t platformHttpRead(PlatformHttp *request, void *buffer, size_t size);                  // bytes, 0 at the end, < 0 error
+void platformHttpClose(PlatformHttp *request);
+
 // ---- controller ---------------------------------------------------------------------------------------------------------------
 // The first user's controller. Button bits are the PS5 pad library's (probe-3); sticks and triggers 0..255, sticks centred at 128.
 enum {

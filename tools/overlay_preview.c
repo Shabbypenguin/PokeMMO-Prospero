@@ -87,8 +87,8 @@ int main(int argc, char **argv) {
     struct {
         const char *name;
         void (*change)(LoadingView *);
-    } screens[] = {{"loading-install", NULL}, {"loading-problem", NULL}, {"loading-details", NULL}};
-    for (unsigned i = 0; i < 3; ++i) {
+    } screens[] = {{"loading-install", NULL}, {"loading-problem", NULL}, {"loading-details", NULL}, {"loading-update", NULL}};
+    for (unsigned i = 0; i < 4; ++i) {
         LoadingView v = view;
         if (i == 1) {
             v.problem = "PokeMMO is not installed yet";
@@ -96,6 +96,11 @@ int main(int argc, char **argv) {
             v.warning = "No ROMs found: add them with the installer to play.";
         }
         if (i == 2) v.details = true;
+        if (i == 3) {
+            v.fraction = 0.08f;
+            v.question = "PokeMMO update: revision 32920 to 32951 (92 MB)";
+            v.choices = "\x01 Download     \x02 Skip          (downloading in 4)";
+        }
         overlayBegin(W, H);
         loadingScreenDraw(&v);
         overlayEnd();

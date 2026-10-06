@@ -17,6 +17,7 @@ The PokeMMO client itself is not uploaded: the title downloads it from PokeMMO o
 import argparse
 import ftplib
 import getpass
+import io
 import json
 import os
 import posixpath
@@ -423,6 +424,8 @@ def main():
     parser.add_argument("--yes", action="store_true", help="no questions: use arguments and saved settings")
     parser.add_argument("--client", type=Path, metavar="ZIP",
                         help="developer builds only: upload the Linux part of this PokeMMO-Client.zip into the title folder")
+    parser.add_argument("--redownload-client", action="store_true",
+                        help="make the console forget its installed client and download it again on the next start (settings stay)")
     args = parser.parse_args()
     interactive = not args.yes and sys.stdin.isatty()
 
@@ -499,6 +502,11 @@ def main():
             # 3. Developer builds: the client
             if args.client:
                 client_step(ftp, package, clean_path(str(args.client)))
+
+            if args.redownload_client:
+                marker = b"redownload\n"
+                upload_stream(ftp, io.BytesIO(marker), len(marker), f"{remote_root}/redownload-client", "redownload-client")
+                say("The console will download the PokeMMO client again on its next start.")
 
             # 4. ROMs
             if not args.no_roms:
