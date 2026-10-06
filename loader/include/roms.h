@@ -10,7 +10,7 @@
 enum { ROM_BLACK_WHITE, ROM_FIRERED, ROM_EMERALD, ROM_PLATINUM, ROM_HGSS, ROM_GAMES };
 #define ROM_FILES_MAX 24
 typedef struct {
-    char file[128];
+    char file[256];
     char code[5];     // the header's game code, "" when none could be read
     unsigned version;
     int game;         // ROM_* or -1: not one PokeMMO uses
