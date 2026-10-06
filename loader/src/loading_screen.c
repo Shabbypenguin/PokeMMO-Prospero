@@ -5,6 +5,7 @@
 #include "loading_screen.h"
 #include "overlay.h"
 #include "overlay_assets.h"
+#include "qrcodegen.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -101,6 +102,33 @@ void loadingScreenDraw(const LoadingView *view) {
     }
 }
 
+// A QR code, white with its quiet zone, `size` pixels square; the code is remade only when the text changes.
+static void drawQr(float x, float y, float size, const char *text) {
+    static char encoded_text[256];
+    static uint8_t qr[qrcodegen_BUFFER_LEN_FOR_VERSION(10)];
+    static bool have;
+    if (strcmp(encoded_text, text)) {
+        uint8_t scratch[qrcodegen_BUFFER_LEN_FOR_VERSION(10)];
+        snprintf(encoded_text, sizeof(encoded_text), "%s", text);
+        have = qrcodegen_encodeText(text, scratch, qr, qrcodegen_Ecc_MEDIUM, 1, 10, qrcodegen_Mask_AUTO, true);
+    }
+    if (!have) return;
+    int modules = qrcodegen_getSize(qr);
+    float m = size / (float)(modules + 8);
+    overlayRect(x, y, size, size, 0xFFFFFFFFu);
+    for (int row = 0; row < modules; ++row)
+        for (int column = 0; column < modules;) {
+            if (!qrcodegen_getModule(qr, column, row)) {
+                ++column;
+                continue;
+            }
+            int end = column;
+            while (end < modules && qrcodegen_getModule(qr, end, row)) ++end;
+            overlayRect(x + (4.0f + (float)column) * m, y + (4.0f + (float)row) * m, (float)(end - column) * m + 0.5f, m + 0.5f, 0x000000FFu);
+            column = end;
+        }
+}
+
 // ---- the ROM screen ------------------------------------------------------------------------------------------------------------------
 void romScreenDraw(const RomScan *scan, const RomUploadInfo *upload, bool blocking) {
     const uint32_t GREEN = 0x7EE08AFFu;
@@ -144,24 +172,27 @@ void romScreenDraw(const RomScan *scan, const RomUploadInfo *upload, bool blocki
     }
     const float box_y = 700;
     overlayRect(left, box_y, width, 260, 0x111D36FFu);
-    overlayText(left + 30, box_y + 14, "Upload your ROM files (.nds, .gba) from a PC or phone on the same network:", 28, SOFT);
+    overlayText(left + 30, box_y + 14, "Upload ROM files (.nds, .gba) from a PC or phone on the same network:", 28, SOFT);
     char line[300];
     float row = box_y + 56;
     if (upload->web) {
         overlayText(left + 30, row, "In a browser, open", 30, DIM);
         snprintf(line, sizeof(line), "http://%s:8080", upload->address);
         overlayText(left + 330, row - 4, line, 38, BLUE);
+        drawQr(left + width - 240, box_y + 10, 240, line);  // scan with a phone instead of typing the address
         row += 50;
     }
     if (upload->ftp_port) {
         overlayText(left + 30, row, "Or with an FTP app", 30, DIM);
-        snprintf(line, sizeof(line), "Address %s    Port %u    Folder %s", upload->address, upload->ftp_port, upload->folder);
-        overlayTextFit(left + 330, row + 2, line, 28, width - 360, BLUE);
-        row += 46;
+        snprintf(line, sizeof(line), "Address %s     Port %u", upload->address, upload->ftp_port);
+        overlayText(left + 330, row + 2, line, 28, BLUE);
+        snprintf(line, sizeof(line), "Folder %s", upload->folder);
+        overlayTextFit(left + 330, row + 38, line, 28, width - 360 - (upload->web ? 260 : 0), BLUE);
+        row += 80;
     }
     if (upload->receiving && upload->receiving[0])
-        overlayTextFit(left + 30, row + 4, upload->receiving, 28, width - 60, GREEN);
-    overlayText(left + 30, box_y + 220, "Or run the installer on your PC and choose your ROM folder.", 26, DIM);
+        overlayTextFit(left + 30, row - 4, upload->receiving, 26, width - 60 - (upload->web ? 260 : 0), GREEN);
+    overlayText(left + 30, box_y + 224, "Or run the installer on your PC and choose your ROM folder.", 24, DIM);
     if (blocking)
         overlayTextCentered(OVERLAY_WIDTH / 2, 995, "\x01 Check again          \x02 Start anyway", 34, TEXT);
     else
