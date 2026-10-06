@@ -139,7 +139,9 @@ int main(int argc, char **argv) {
         romsScan(folder, &scan);
         for (unsigned i = 0; i < scan.count; ++i) printf("rom: %s -> game %d: %s\n", scan.files[i].file, scan.files[i].game, scan.files[i].note);
         overlayBegin(W, H);
-        romScreenDraw(&scan, "192.168.1.20", "2121", "/data/homebrew/PPSA27166/roms/", true);
+        RomUploadInfo info = {.address = "192.168.1.20", .web = true, .ftp_port = 2121, .folder = "/data/homebrew/PPSA27166/roms/",
+                              .receiving = "Receiving Pokemon - Black Version (USA, Europe).nds: 84 of 256 MB"};
+        romScreenDraw(&scan, &info, true);
         overlayEnd();
         snprintf(path, sizeof(path), "%s/roms.ppm", out);
         save(path);

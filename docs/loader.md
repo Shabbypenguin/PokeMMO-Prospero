@@ -102,6 +102,15 @@ FTP details to upload with (address, port 2121 and folder, each on its own line)
 Circle starts anyway. With only optional games missing, the loading screen says how many were found and holding Square
 shows the same screen.
 
+### Uploading ROMs without an FTP payload (loader-19)
+
+At start the loader checks whether an FTP server answers on the console (ports 2121, 1337, 21). While the ROM screen is up
+it runs a web page on port 8080 (open `http://<console IP>:8080` in any browser on the network and pick the files) and,
+when no FTP server answered, a small FTP server on port 2121 that shows only the ROM folder
+(`/data/homebrew/PPSA27166/roms`). Both write nothing but files in that folder, show progress on the ROM screen, re-read
+the ROM list after each file, and stop before the game starts. The installer recognises the title's FTP server and only
+uploads ROMs to it. `tools/upload_test.c` runs both servers on a PC.
+
 ### Client updates (loader-15)
 
 At every start the loader asks PokeMMO's download server whether the published client changed (one HEAD request; the

@@ -102,7 +102,7 @@ void loadingScreenDraw(const LoadingView *view) {
 }
 
 // ---- the ROM screen ------------------------------------------------------------------------------------------------------------------
-void romScreenDraw(const RomScan *scan, const char *address, const char *port, const char *folder, bool blocking) {
+void romScreenDraw(const RomScan *scan, const RomUploadInfo *upload, bool blocking) {
     const uint32_t GREEN = 0x7EE08AFFu;
     overlayClear(0x050B18FFu);
     overlayTextCentered(OVERLAY_WIDTH / 2, 60, "Game ROMs", 56, TEXT);
@@ -122,7 +122,7 @@ void romScreenDraw(const RomScan *scan, const char *address, const char *port, c
         else
             overlayText(left + 720, y + 16, "Missing", 28, romGameRequired(game) ? RED : AMBER);
     }
-    float y = top + ROM_GAMES * row_h + 30;
+    float y = top + ROM_GAMES * row_h + 20;
     if (!scan->listed)
         overlayTextCentered(OVERLAY_WIDTH / 2, y, "The ROM folder could not be read.", 30, RED);
     else {
@@ -130,28 +130,38 @@ void romScreenDraw(const RomScan *scan, const char *address, const char *port, c
         for (unsigned i = 0; i < scan->count; ++i) others += scan->files[i].game < 0;
         if (others) overlayText(left, y, "Other files in the ROM folder:", 28, DIM);
         unsigned shown = 0;
-        for (unsigned i = 0; i < scan->count && shown < 3; ++i) {
+        for (unsigned i = 0; i < scan->count && shown < 2; ++i) {
             if (scan->files[i].game >= 0) continue;
             char line[300];
             snprintf(line, sizeof(line), "%s  -  %s", scan->files[i].file, scan->files[i].note);
-            overlayTextFit(left + 30, y + 38 + 34 * (float)shown++, line, 26, width - 30, SOFT);
+            overlayTextFit(left + 30, y + 34 + 30 * (float)shown++, line, 26, width - 30, SOFT);
         }
         if (others > shown || scan->more) {
             char line[80];
             snprintf(line, sizeof(line), "... and %u more", others - shown + scan->more);
-            overlayText(left + 30, y + 38 + 34 * (float)shown, line, 26, DIM);
+            overlayText(left + 30, y + 34 + 30 * (float)shown, line, 26, DIM);
         }
     }
-    const float box_y = 735;
-    overlayRect(left, box_y, width, 225, 0x111D36FFu);
-    overlayText(left + 30, box_y + 16, "Upload your ROM files (.nds, .gba) with an FTP app on your PC or phone:", 28, SOFT);
-    static const char *const labels[] = {"Address", "Port", "Folder"};
-    const char *values[] = {address, port, folder};
-    for (int i = 0; i < 3; ++i) {
-        overlayText(left + 30, box_y + 58 + 44 * (float)i, labels[i], 32, DIM);
-        overlayTextFit(left + 200, box_y + 58 + 44 * (float)i, values[i], 32, width - 230, BLUE);
+    const float box_y = 700;
+    overlayRect(left, box_y, width, 260, 0x111D36FFu);
+    overlayText(left + 30, box_y + 14, "Upload your ROM files (.nds, .gba) from a PC or phone on the same network:", 28, SOFT);
+    char line[300];
+    float row = box_y + 56;
+    if (upload->web) {
+        overlayText(left + 30, row, "In a browser, open", 30, DIM);
+        snprintf(line, sizeof(line), "http://%s:8080", upload->address);
+        overlayText(left + 330, row - 4, line, 38, BLUE);
+        row += 50;
     }
-    overlayText(left + 30, box_y + 190, "Or run the installer on your PC and choose your ROM folder.", 26, DIM);
+    if (upload->ftp_port) {
+        overlayText(left + 30, row, "Or with an FTP app", 30, DIM);
+        snprintf(line, sizeof(line), "Address %s    Port %u    Folder %s", upload->address, upload->ftp_port, upload->folder);
+        overlayTextFit(left + 330, row + 2, line, 28, width - 360, BLUE);
+        row += 46;
+    }
+    if (upload->receiving && upload->receiving[0])
+        overlayTextFit(left + 30, row + 4, upload->receiving, 28, width - 60, GREEN);
+    overlayText(left + 30, box_y + 220, "Or run the installer on your PC and choose your ROM folder.", 26, DIM);
     if (blocking)
         overlayTextCentered(OVERLAY_WIDTH / 2, 995, "\x01 Check again          \x02 Start anyway", 34, TEXT);
     else

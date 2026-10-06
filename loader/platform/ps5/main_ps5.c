@@ -19,6 +19,7 @@
 #include "roms.h"
 #include "slots.h"
 #include "updater.h"
+#include "upload_server.h"
 #include "prospero_version.h"  // PROSPERO_VERSION, PROSPERO_TITLE_ID (generated at build time)
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
@@ -40,7 +41,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define LOADER_MILESTONE "loader-18"
+#define LOADER_MILESTONE "loader-19"
 // ps5-opengl's app heap (malloc of the loader and of everything the client allocates with malloc): from direct memory.
 const size_t ps5_opengl_heap_size = 768u << 20;
 
@@ -165,6 +166,17 @@ static _Atomic unsigned rom_count;  // games found
 static RomScan rom_scan;
 static pthread_mutex_t rom_lock = PTHREAD_MUTEX_INITIALIZER;
 static char upload_address[32];
+// loader-19: an FTP payload may not be running. The title looks for one (uploadDetectFtp) and, while the ROM screen is up, runs
+// its own upload page (port 8080) and, when no FTP server answered, its own FTP server (port 2121) into the ROM folder.
+#define ROM_FTP_PATH "/data/homebrew/" PROSPERO_TITLE_ID "/roms"
+static unsigned existing_ftp_port;
+static _Atomic bool uploads_started;
+static void scanRoms(void);
+static void romsChanged(void) { scanRoms(); }
+static void startUploads(void) {
+    if (atomic_exchange(&uploads_started, true)) return;
+    uploadServersStart(ROM_FOLDER, ROM_FTP_PATH, existing_ftp_port == 0, romsChanged);
+}
 static _Atomic bool rom_blocking;
 static _Atomic int rom_choice;  // 0 none, 1 check again, 2 start anyway
 static void scanRoms(void) {
@@ -840,7 +852,23 @@ static void drawScreen(unsigned frame) {
         pthread_mutex_lock(&rom_lock);
         RomScan scan = rom_scan;
         pthread_mutex_unlock(&rom_lock);
-        romScreenDraw(&scan, upload_address, "2121", "/data/homebrew/" PROSPERO_TITLE_ID "/roms/", blocking);
+        startUploads();
+        UploadStatus *upload = uploadStatus();
+        char receiving[200] = "";
+        if (upload->current[0]) {
+            uint64_t done = atomic_load(&upload->current_done), total = atomic_load(&upload->current_total);
+            if (total)
+                snprintf(receiving, sizeof(receiving), "Receiving %s: %llu of %llu MB", upload->current, (unsigned long long)(done >> 20), (unsigned long long)(total >> 20));
+            else
+                snprintf(receiving, sizeof(receiving), "Receiving %s: %llu MB", upload->current, (unsigned long long)(done >> 20));
+        } else if (atomic_load(&upload->received))
+            snprintf(receiving, sizeof(receiving), "%u file(s) received.", atomic_load(&upload->received));
+        RomUploadInfo info = {.address = upload_address,
+                              .web = atomic_load(&upload->http_running),
+                              .ftp_port = existing_ftp_port ? existing_ftp_port : (atomic_load(&upload->ftp_running) ? UPLOAD_FTP_PORT : 0),
+                              .folder = ROM_FTP_PATH "/",
+                              .receiving = receiving};
+        romScreenDraw(&scan, &info, blocking);
         overlayEnd();
         return;
     }
@@ -854,7 +882,9 @@ static void *workMain(void *argument) {
     listFolder("fs.list.app0", "/app0", NULL, 0);
     prepareSlots();
     char address[16];
-    snprintf(upload_address, sizeof(upload_address), "%s", platformLocalIPv4(address) ? address : "your console's IP (Settings > Network)");
+    snprintf(upload_address, sizeof(upload_address), "%s", platformLocalIPv4(address) ? address : "<console IP>");
+    existing_ftp_port = uploadDetectFtp();
+    say("upload: %s", existing_ftp_port ? "an FTP server is already running" : "no FTP server is running: the ROM screen will start one");
     scanRoms();
     // The installer's --redownload-client: forget the installed client (its files are overwritten, settings stay) and skip the
     // developer copy this once, so the updater downloads it.
@@ -872,6 +902,7 @@ static void *workMain(void *argument) {
     }
     if (slot_state.active && active_revision[0]) {
         waitForRequiredRom();
+        if (atomic_load(&uploads_started)) uploadServersStop();  // the ports are free again before the game starts
         applyDefaults();
         pthread_t game;
         pthread_attr_t attributes;

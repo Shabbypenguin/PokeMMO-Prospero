@@ -31,5 +31,12 @@ typedef struct {
 void loadingScreenDraw(const LoadingView *view);
 // The ROM screen: what is in the ROM folder against what PokeMMO uses, and where to upload. `blocking`: the game cannot start
 // as things are (Cross checks again, Circle starts anyway); otherwise it is open while Square is held.
-// Where to upload: the console's address, the FTP port and the folder, each on its own line.
-void romScreenDraw(const RomScan *scan, const char *address, const char *port, const char *folder, bool blocking);
+// Where to upload: the web page (when running), an FTP server (the console's own payload, or the title's), the folder.
+typedef struct {
+    const char *address;  // the console's IP
+    bool web;             // the title's upload page runs (port 8080)
+    unsigned ftp_port;    // an FTP server to use, 0 when none
+    const char *folder;   // the ROM folder as FTP shows it
+    const char *receiving;  // "Receiving ...", or NULL
+} RomUploadInfo;
+void romScreenDraw(const RomScan *scan, const RomUploadInfo *upload, bool blocking);

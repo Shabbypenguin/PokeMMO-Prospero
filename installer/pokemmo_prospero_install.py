@@ -487,10 +487,17 @@ def main():
         save_config({"host": host, "port": port, "user": user})  # only settings that actually connected
 
         with ftp:
+            remote_root = f"{HOMEBREW}/{package.title_id}"
+            if "PokeMMO-Prospero ROM upload" in (ftp.getwelcome() or ""):
+                # The title's own upload server (its ROM screen is open): it only takes ROMs.
+                say("Connected to the PokeMMO Prospero ROM screen: only ROMs can be uploaded this way.")
+                rom_step(ftp, package, clean_path(str(args.roms)) if args.roms else None, args.yes, interactive)
+                say()
+                say("Done. Press Cross on the console to check the ROMs again.")
+                return 0
             if not exists_dir(ftp, "/data"):
                 raise ValueError("the FTP server doesn't show /data: is this the PS5's FTP server with full access?")
             ensure_dir(ftp, HOMEBREW)
-            remote_root = f"{HOMEBREW}/{package.title_id}"
             say(f"Installing to {remote_root}/  (close the title on the PS5 first if it is running)")
             pairs = [(package.root / f, f"{remote_root}/{f}", f) for f in files]
             uploaded, skipped = sync_files(ftp, pairs, always=set(CRITICAL_LAST))
