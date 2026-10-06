@@ -13,6 +13,8 @@
 #include "linux_audio.h"
 #include "linux_gtk.h"
 #include "linux_sdl.h"
+#include "loading_screen.h"
+#include "overlay.h"
 #include "platform.h"
 #include "prospero_version.h"  // PROSPERO_VERSION, PROSPERO_TITLE_ID (generated at build time)
 #include <EGL/egl.h>
@@ -34,7 +36,7 @@
 #include <sys/ucontext.h>
 #include <unistd.h>
 
-#define LOADER_MILESTONE "loader-7"
+#define LOADER_MILESTONE "loader-8"
 // ps5-opengl's app heap (malloc of the loader and of everything the client allocates with malloc): from direct memory.
 const size_t ps5_opengl_heap_size = 768u << 20;
 
@@ -61,9 +63,11 @@ typedef struct {
     const char *name;
     _Atomic int state;
 } Step;
+// loader-8: the loading screen shows one bar; these are the details behind it (hold Triangle). The storage probes of loader-1
+// (title folder writes, 1 GiB in /download0) and the audio beep of loader-4 answered their questions and are gone.
 static Step steps[] = {
-    {"fs.list.app0", NOT_RUN}, {"fs.list.roms", NOT_RUN},   {"fs.list.download0", NOT_RUN}, {"fs.romread", NOT_RUN}, {"fs.app0write", NOT_RUN}, {"fs.download0size", NOT_RUN}, {"sys.modules", NOT_RUN},
-    {"net.https", NOT_RUN},    {"audio.tone", NOT_RUN},     {"client.install", NOT_RUN},    {"client.map", NOT_RUN}, {"client.start", NOT_RUN}, {"client.end", NOT_RUN},
+    {"fs.list.app0", NOT_RUN}, {"fs.list.roms", NOT_RUN}, {"fs.romread", NOT_RUN},   {"sys.modules", NOT_RUN}, {"net.https", NOT_RUN},
+    {"client.install", NOT_RUN}, {"client.map", NOT_RUN},  {"client.start", NOT_RUN}, {"client.end", NOT_RUN},
 };
 #define STEP_COUNT (sizeof(steps) / sizeof(*steps))
 static void mark(const char *name, int state) {
@@ -215,63 +219,6 @@ static void checkRoms(char names[][256], unsigned count) {
     mark("fs.romread", readable == count ? PASS : FAIL);
 }
 
-// Is the title's own folder writable, and does a write reach the folder FTP sees (/data/homebrew/<ID>)? Look for the file over FTP.
-static void checkApp0Write(void) {
-    mark("fs.app0write", RUNNING);
-    const char *path = "/app0/prospero-write-test.bin";
-    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (fd < 0) {
-        say("fs app0write: open errno=%d (the title folder is read-only)", errno);
-        mark("fs.app0write", INFO);
-        return;
-    }
-    static char block[65536];
-    memset(block, 0x5a, sizeof(block));
-    size_t written = 0;
-    for (int i = 0; i < 16; ++i) {
-        ssize_t got = write(fd, block, sizeof(block));
-        if (got <= 0) break;
-        written += (size_t)got;
-    }
-    close(fd);
-    say("fs app0write: wrote %zu bytes to %s. Check over FTP whether /data/homebrew/%s/prospero-write-test.bin exists "
-        "(it is left there for that; the next run replaces it)", written, path, PROSPERO_TITLE_ID);
-    mark("fs.app0write", written == 16 * sizeof(block) ? PASS : FAIL);
-}
-
-// How much the title's storage really holds: write until it refuses or 1 GiB, then delete (loader-1 showed 2 GiB works).
-static void checkDownload0Size(void) {
-    mark("fs.download0size", RUNNING);
-    const char *path = "/download0/prospero-size-test.bin";
-    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (fd < 0) {
-        say("fs download0size: open errno=%d", errno);
-        mark("fs.download0size", FAIL);
-        return;
-    }
-    size_t chunk = 8u << 20, total = 0, limit = (size_t)1 << 30;
-    char *buffer = malloc(chunk);
-    int error = 0;
-    uint64_t start = platformMonotonicNs();
-    if (buffer) memset(buffer, 0x33, chunk);
-    while (buffer && total < limit) {
-        ssize_t got = write(fd, buffer, chunk);
-        if (got <= 0) {
-            error = got < 0 ? errno : ENOSPC;
-            break;
-        }
-        total += (size_t)got;
-        if (total % (256u << 20) == 0) say("fs download0size: %zu MiB written", total >> 20);
-    }
-    close(fd);
-    unlink(path);
-    free(buffer);
-    double seconds = (double)(platformMonotonicNs() - start) / 1e9;
-    say("fs download0size: %zu MiB written before %s (error %d), %.0f MiB/s", total >> 20, total >= limit ? "the 1 GiB limit" : "a refusal", error,
-        seconds > 0 ? (double)(total >> 20) / seconds : 0.0);
-    mark("fs.download0size", total >= limit ? PASS : INFO);
-}
-
 // ---- system modules: can a title load them at run time, and from which path? ----------------------------------------------------
 static int loadModule(const char *name) {
     const char *word = sceKernelGetFsSandboxRandomWord();
@@ -404,37 +351,16 @@ static void httpsBody(void) {
             }
         }
     }
-    mark("net.https", !faulted && status == 200 ? PASS : FAIL);
+    mark("net.https", !faulted && status == 200 ? PASS : INFO);  // not needed yet: the client does its own HTTPS
 }
 static void checkHttps(void) {
     mark("net.https", RUNNING);
     if (ssl_module < 0 || http_module < 0) {
         say("net https: the system HTTP/SSL modules could not be loaded (a bundled TLS library is the fallback)");
-        mark("net.https", FAIL);
+        mark("net.https", INFO);
         return;
     }
-    if (!runWithLimit(httpsBody, 30, "net.https")) mark("net.https", FAIL);
-}
-
-// ---- audio: half a second of a quiet 440 Hz tone through the directly linked audio output (loader-4) ------------------------------
-static void audioBody(void) {
-    static int16_t samples[256 * 2];
-    int handle = platformAudioOpen(256), played = 0;
-    for (int frame = 0; handle >= 0 && frame < 94; ++frame) {  // 94 x 256 samples = 0.5 s
-        for (int i = 0; i < 256; ++i) {
-            double t = (double)(frame * 256 + i) / 48000.0;
-            samples[2 * i] = samples[2 * i + 1] = (int16_t)(sin(2 * 3.14159265358979 * 440.0 * t) * 3000);
-        }
-        if (platformAudioWrite(handle, samples) < 0) break;
-        ++played;
-    }
-    if (handle >= 0) platformAudioClose(handle);
-    say("audio tone: handle=0x%x frames=%d (you should have heard a short beep)", handle, played);
-    mark("audio.tone", played == 94 ? PASS : FAIL);
-}
-static void checkAudio(void) {
-    mark("audio.tone", RUNNING);
-    if (!runWithLimit(audioBody, 10, "audio.tone")) mark("audio.tone", FAIL);
+    if (!runWithLimit(httpsBody, 30, "net.https")) mark("net.https", INFO);
 }
 
 // ---- the client: copied from the title folder (dev builds) into the title storage, where it can write next to itself ------------------
@@ -490,12 +416,19 @@ static bool copyFile(const char *from, const char *to, char *buffer, size_t size
     return ok;
 }
 // manifest.txt (written by the installer): one "<size> <relative path>" line per file of the client's Linux part.
+static _Atomic unsigned long long install_done, install_total;  // bytes, for the loading bar
+static char client_revision[64];                                  // shown on the loading screen
+static void noteRevision(const char *revision) {
+    size_t length = strcspn(revision, "\r\n");
+    snprintf(client_revision, sizeof(client_revision), "%.*s", (int)(length < 60 ? length : 60), revision);
+}
 static bool installClient(void) {
     mark("client.install", RUNNING);
     char source_revision[64] = "", installed_revision[64] = "";
     if (!readSmall(CLIENT_SOURCE "/revision.txt", source_revision, sizeof(source_revision))) {
         if (readSmall(GAME "/revision.txt", installed_revision, sizeof(installed_revision))) {
             say("client install: no client in the title folder; using the installed revision %s", installed_revision);
+            noteRevision(installed_revision);
             mark("client.install", INFO);
             return true;
         }
@@ -504,6 +437,7 @@ static bool installClient(void) {
         return false;
     }
     readSmall(GAME "/revision.txt", installed_revision, sizeof(installed_revision));
+    noteRevision(source_revision);
     if (!strcmp(source_revision, installed_revision)) {
         say("client install: revision %s already installed", installed_revision);
         mark("client.install", PASS);
@@ -523,6 +457,12 @@ static bool installClient(void) {
         return false;
     }
     say("client install: revision %s -> %s", installed_revision[0] ? installed_revision : "(none)", source_revision);
+    unsigned long long total = 0;
+    for (const char *line = manifest; *line; line += strcspn(line, "\n"), line += *line == '\n') {
+        unsigned long long size = 0;
+        if (sscanf(line, "%llu", &size) == 1) total += size;
+    }
+    atomic_store(&install_total, total);
     size_t buffer_size = 4u << 20;
     char *buffer = malloc(buffer_size);
     unsigned files = 0;
@@ -542,6 +482,7 @@ static bool installClient(void) {
             ok = copyFile(from, to, buffer, buffer_size);
             ++files;
             bytes += size;
+            atomic_store(&install_done, bytes);
             if (files % 200 == 0) say("client install: %u files, %llu MiB", files, bytes >> 20);
         }
         line[length] = saved;
@@ -558,8 +499,16 @@ static bool installClient(void) {
 }
 
 // ---- the client run -----------------------------------------------------------------------------------------------------------------
-static _Atomic bool game_finished, release_screen;
-static _Atomic bool screen_released;
+static _Atomic bool game_finished, release_screen, screen_released;
+static _Atomic uint64_t client_started_ns;
+static _Atomic unsigned rom_count;
+// The SDL layer calls this on the game's thread just before it makes its window surface (ps5-opengl has one): the loading screen
+// stays up through the client's start and gives the display away only then.
+static void acquireDisplay(void) {
+    if (atomic_load(&screen_released)) return;
+    atomic_store(&release_screen, true);
+    while (!atomic_load(&screen_released)) sceKernelUsleep(5000);
+}
 static void *gameThread(void *argument) {
     (void)argument;
     // This project's SDL3, EGL/GLX, OpenAL and GTK (the file chooser), adapted from PokeMMO-NX.
@@ -570,8 +519,8 @@ static void *gameThread(void *argument) {
     virtual_libraries[3] = linuxGlxLibrary;
     for (unsigned i = 0; i < 4; ++i) virtual_libraries[4 + i] = linuxGtkLibraries[i];
     linuxAudioOutAttach();
-    // The status screen gives the display to the game: ps5-opengl has one window surface.
-    while (!atomic_load(&screen_released)) sceKernelUsleep(10000);
+    linuxSdlSetDisplayAcquire(acquireDisplay);
+    atomic_store(&client_started_ns, platformMonotonicNs());
     mark("client.map", RUNNING);
     static const char *const options[] = {"-XX:MaxHeapSize=640m", "-XX:MaxNewSize=128m", NULL};
     GameConfig config = {.root = ROOT,
@@ -614,13 +563,19 @@ static bool screenOpen(void) {
     eglQuerySurface(display, surface, EGL_HEIGHT, &height);
     return true;
 }
-static void drawSteps(unsigned frame) {
+static int stepState(const char *name) {
+    for (size_t i = 0; i < STEP_COUNT; ++i)
+        if (!strcmp(steps[i].name, name)) return atomic_load(&steps[i].state);
+    return NOT_RUN;
+}
+// Without the overlay (no OpenGL entry points): the coloured tiles of the earlier loaders, drawn with scissored clears.
+static void drawTilesPlain(unsigned frame) {
     glDisable(GL_SCISSOR_TEST);
     glViewport(0, 0, width, height);
-    glClearColor(0.08f, 0.08f, 0.10f, 1);
+    glClearColor(0.03f, 0.07f, 0.16f, 1);
     glClear(GL_COLOR_BUFFER_BIT);
     glEnable(GL_SCISSOR_TEST);
-    const int columns = 7, size = width / 12, gap = size / 6;
+    const int columns = 5, size = width / 12, gap = size / 6;
     const int left = (width - columns * size - (columns - 1) * gap) / 2;
     const int rows = (int)((STEP_COUNT + columns - 1) / columns);
     const int top = (height + rows * size + (rows - 1) * gap) / 2;
@@ -638,6 +593,59 @@ static void drawSteps(unsigned frame) {
     }
     glDisable(GL_SCISSOR_TEST);
 }
+// What the loading screen says, from the steps and the install progress.
+static void loadingView(LoadingView *view, LoadingStep *step_view, char *detail, size_t detail_size, unsigned frame) {
+    static char version[128];
+    snprintf(version, sizeof(version), "Prospero %s (%s)", LOADER_MILESTONE, PROSPERO_VERSION);
+    for (size_t i = 0; i < STEP_COUNT; ++i) step_view[i] = (LoadingStep){steps[i].name, atomic_load(&steps[i].state)};
+    *view = (LoadingView){.status = "Getting ready", .detail = detail, .version = version, .revision = client_revision,
+                          .log_path = "/data/homebrew/" PROSPERO_TITLE_ID "/prospero.log", .steps = step_view, .step_count = STEP_COUNT, .frame = frame};
+    detail[0] = 0;
+    static const char *const checks[] = {"fs.list.app0", "fs.list.roms", "fs.romread", "sys.modules", "net.https"};
+    unsigned checked = 0;
+    for (unsigned i = 0; i < 5; ++i) checked += stepState(checks[i]) != NOT_RUN && stepState(checks[i]) != RUNNING;
+    view->fraction = 0.08f * (float)checked / 5.0f;
+    if (checked < 5) view->status = checked < 3 ? "Checking files" : "Checking the system";
+    int install = stepState("client.install");
+    if (install == RUNNING) {
+        unsigned long long done = atomic_load(&install_done), total = atomic_load(&install_total);
+        view->status = "Installing PokeMMO";
+        if (total) {
+            view->fraction = 0.08f + 0.52f * (float)((double)done / (double)total);
+            snprintf(detail, detail_size, "%llu of %llu MB", done >> 20, total >> 20);
+        }
+    } else if (install == PASS || install == INFO) {
+        uint64_t started = atomic_load(&client_started_ns);
+        float seconds = started ? (float)((double)(platformMonotonicNs() - started) / 1e9) : 0.0f;
+        view->fraction = 0.6f + 0.38f * (1.0f - expf(-seconds / 20.0f));  // the client's start has no progress to report: an easing guess
+        view->status = "Starting PokeMMO";
+    }
+    if (stepState("fs.list.app0") == FAIL) {
+        view->problem = "The title's files cannot be read";
+        view->advice = "Run the installer on your computer again.";
+    } else if (install == FAIL) {
+        view->problem = "PokeMMO is not installed yet";
+        view->advice = "Run the installer on your computer and pick this console (developer builds: --client PokeMMO-Client.zip).";
+    } else if (atomic_load(&game_finished) || atomic_load(&fatal_signals)) {
+        view->problem = "PokeMMO stopped while starting";
+        view->advice = "Close the title with the PS button and start it again. If it keeps happening, send prospero.log from the title folder (FTP).";
+    }
+    if (stepState("fs.romread") == INFO && !atomic_load(&rom_count)) view->warning = "No ROMs found: add them with the installer to play.";
+}
+static void drawScreen(unsigned frame) {
+    if (!overlayBegin((unsigned)width, (unsigned)height)) {
+        drawTilesPlain(frame);
+        return;
+    }
+    LoadingView view;
+    LoadingStep step_view[STEP_COUNT];
+    char detail[96];
+    loadingView(&view, step_view, detail, sizeof(detail), frame);
+    PlatformPad pad;
+    view.details = platformPadRead(&pad) && (pad.buttons & PLATFORM_PAD_TRIANGLE);
+    loadingScreenDraw(&view);
+    overlayEnd();
+}
 
 // The checks and the client start run behind the screen.
 static void *workMain(void *argument) {
@@ -645,23 +653,18 @@ static void *workMain(void *argument) {
     static char rom_names[32][256];
     listFolder("fs.list.app0", "/app0", NULL, 0);
     unsigned roms = listFolder("fs.list.roms", "/app0/roms", rom_names, 32);
-    listFolder("fs.list.download0", "/download0", NULL, 0);
+    atomic_store(&rom_count, roms);
     checkRoms(rom_names, roms > 32 ? 32 : roms);
-    checkApp0Write();
-    checkDownload0Size();
     checkModules();
     checkHttps();
-    checkAudio();
     if (installClient()) {
-        atomic_store(&release_screen, true);
         pthread_t game;
         pthread_attr_t attributes;
         pthread_attr_init(&attributes);
         pthread_attr_setstacksize(&attributes, 1u << 20);
         if (!pthread_create(&game, &attributes, gameThread, NULL)) pthread_detach(game);
         pthread_attr_destroy(&attributes);
-    } else
-        atomic_store(&game_finished, true);
+    }
     return NULL;
 }
 
@@ -690,11 +693,12 @@ int main(void) {
             atomic_store(&screen_released, true);
         }
         if (screen) {
-            drawSteps(frame);
+            drawScreen(frame);
             eglSwapBuffers(display, surface);
         }
         if (atomic_load(&fatal_signals) && atomic_load(&steps[STEP_COUNT - 1].state) != FAIL) mark("client.end", FAIL);
-        if (atomic_load(&game_finished) && !reported) {
+        bool install_failed = stepState("client.install") == FAIL;
+        if ((atomic_load(&game_finished) || install_failed) && !reported) {
             reported = true;
             say("DONE. Close the title with the PS button. The full log is above and in /data/homebrew/" PROSPERO_TITLE_ID "/prospero.log (FTP).");
         }

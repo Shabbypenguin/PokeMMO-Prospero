@@ -38,7 +38,7 @@ keeps PokeMMO-NX's copyright notice in its header and lists what changed (detail
 | `loader/src/linux_stubs_x86_64.c` | `linux_trap_stubs.s`, `linux_virtual_stub_table.s` | rewritten for x86-64 |
 | `loader/src/linux_sync.c`, `linux_semaphore.c`, `linux_tls.c` | interfaces only | implementations written for this port |
 | `loader/src/linux_sdl.c`, `linux_sdl_events.c`, `linux_sdl_keys.c`, `linux_sdl_io.c`, `linux_sdl_cursor.c`, `linux_audio.c`, `linux_al.c`, `linux_gtk.c`, `linux_file_picker.c` | same names | ps5-opengl surface, platform calls |
-| `loader/src/linux_sdl_input.c`, `linux_audio_out.c` | same names | PS5 controller; silent audio output for now |
+| `loader/src/linux_sdl_input.c`, `linux_audio_out.c` | same names | PS5 controller; the keyboard is the loader's own (`osk.c`); audio through `sceAudioOut` |
 
 ## PS5 platform projects
 
@@ -51,10 +51,24 @@ keeps PokeMMO-NX's copyright notice in its header and lists what changed (detail
 
 The exact pinned versions live in the build environment repository (`pokemmo-ps5-buildenv`, `docker/Dockerfile`).
 
+## Libraries
+
+| Library | Author | License | Used for |
+|---------|--------|---------|----------|
+| [QR Code generator](https://github.com/nayuki/QR-Code-generator) (C version, `loader/src/qrcodegen.c`, `loader/include/qrcodegen.h`, commit `3c6d0b3`) | Project Nayuki | MIT (in the files) | the link box's QR codes |
+
 ## Fonts
 
 - The file chooser's bitmap font (`loader/src/picker_font.c`) is rendered from [DejaVu Sans Mono](https://dejavu-fonts.github.io/)
   by `tools/make_picker_font.py` (DejaVu fonts license, derived from Bitstream Vera: free to embed and redistribute).
+- The overlay font (loading screen, keyboard, link box; `loader/src/overlay_assets.c`) is rendered from
+  [DejaVu Sans](https://dejavu-fonts.github.io/) by `tools/make_branding.py` (same license).
+
+## Artwork
+
+- The PokeMMO-Prospero logo (`assets/branding/logo-source.png`) and the icon, home screen background and loading screen
+  logo made from it by `tools/make_branding.py` are this project's own (Shabby). They replace the ps5-native-app-boilerplate's
+  sample artwork and sound in the title.
 
 ## Considered, not used
 

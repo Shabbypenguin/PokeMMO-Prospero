@@ -2,8 +2,9 @@
 # Builds the loader for a Linux PC (platform/host): `make -f loader/Makefile.host` from the repository root.
 CC ?= clang
 BUILD := build/host
-# The virtual SDL3/EGL/OpenAL/GTK libraries draw with EGL and only exist in the PS5 title.
-GL_SOURCES := loader/src/linux_sdl.c loader/src/linux_sdl_cursor.c loader/src/linux_file_picker.c loader/src/linux_gtk.c
+# The virtual SDL3/EGL/OpenAL/GTK libraries and the overlays (keyboard, link box) draw with EGL and only exist in the PS5 title.
+GL_SOURCES := loader/src/linux_sdl.c loader/src/linux_sdl_cursor.c loader/src/linux_file_picker.c loader/src/linux_gtk.c \
+	loader/src/linux_sdl_input.c loader/src/osk.c loader/src/link_box.c loader/src/overlay.c loader/src/overlay_assets.c loader/src/qrcodegen.c loader/src/loading_screen.c
 SOURCES := $(filter-out $(GL_SOURCES),$(wildcard loader/src/*.c)) $(wildcard loader/platform/host/*.c)
 OBJECTS := $(patsubst %.c,$(BUILD)/%.o,$(SOURCES))
 CFLAGS := -std=gnu11 -O1 -g -fno-omit-frame-pointer -Wall -Wextra -Wno-unused-parameter -Iloader/include -D_GNU_SOURCE -pthread

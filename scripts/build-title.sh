@@ -9,11 +9,13 @@
 #
 #   scripts/build-title.sh --title-id PPSA27165 --name "PokeMMO Probe" --sources probe \
 #       [--sources DIR]... [--include DIR]... [--zlib] [--assets DIR] [--heap-mib 256] [--download-mib 256]
-#       [--content-suffix PROBE] [--define NAME=VALUE]...
+#       [--content-suffix PROBE] [--define NAME=VALUE]... [--branding DIR]
 #
 # --sources DIR   every .c/.cpp in DIR is compiled (C11 / C++20, -O2) together with the ps5-opengl glue (repeatable).
 # --include DIR   headers in DIR are visible to every source (repeatable).
 # --zlib          link the zlib the boilerplate builds for the console (the loader's zlib adapters need it).
+# --branding DIR  the home screen icon (DIR/icon0.png) and background (DIR/background.dds, both pic0 and pic1) replace the
+#                 boilerplate's artwork; its sound (snd0.at9) is left out. See tools/make_branding.py.
 # Output: build/titles/<TITLE_ID>/dist/<TITLE_ID>/ (folder title) and .zip next to it.
 set -euo pipefail
 
@@ -23,7 +25,7 @@ sdk=${PS5_PAYLOAD_SDK:?}
 prefix=${PS5_OPENGL_PREFIX:?}
 glsrc=${PS5_OPENGL_SOURCE:?}
 
-title_id="" name="" assets="" heap_mib=256 download_mib=256 suffix="" definitions=() sources=() includes=() zlib=0
+title_id="" name="" assets="" branding="" heap_mib=256 download_mib=256 suffix="" definitions=() sources=() includes=() zlib=0
 while (($#)); do
     case $1 in
         --title-id) title_id=$2; shift 2 ;;
@@ -32,6 +34,7 @@ while (($#)); do
         --include) includes+=("$2"); shift 2 ;;
         --zlib) zlib=1; shift ;;
         --assets) assets=$2; shift 2 ;;
+        --branding) branding=$2; shift 2 ;;
         --heap-mib) heap_mib=$2; shift 2 ;;
         --download-mib) download_mib=$2; shift 2 ;;
         --content-suffix) suffix=$2; shift 2 ;;
@@ -105,6 +108,16 @@ if [[ -n $assets ]]; then
     [[ -d $root/$assets ]] || { echo "assets directory missing: $assets" >&2; exit 2; }
     mkdir -p "$app/assets"
     cp -a "$root/$assets/." "$app/assets/"
+fi
+
+if [[ -n $branding ]]; then
+    for file in icon0.png background.dds; do
+        [[ -s $root/$branding/$file ]] || { echo "branding file missing: $branding/$file" >&2; exit 2; }
+    done
+    rm -f "$app/sce_sys/"{snd0.at9,background-source.png,launch-background-source.png}
+    cp "$root/$branding/icon0.png" "$app/sce_sys/icon0.png"
+    cp "$root/$branding/background.dds" "$app/sce_sys/pic0.dds"
+    cp "$root/$branding/background.dds" "$app/sce_sys/pic1.dds"
 fi
 
 # Title metadata: ps5-opengl's param.json (address-space and page-table settings) with our identity.

@@ -12,7 +12,7 @@ CLIENT_ZIP ?= private/PokeMMO-Client.zip
 PS5_HOST ?=
 FTP_PORT ?= 2121
 
-.PHONY: help env-check probe package-probe deploy-probe loader package-loader host-loader host-run fetch-client analyze clean
+.PHONY: help env-check probe package-probe deploy-probe loader package-loader host-loader host-run overlay-preview fetch-client analyze clean
 
 help:
 	@echo "make probe          build the hardware probe title  (PROBE_LOG_HOST=192.168.x.y optional)"
@@ -57,7 +57,8 @@ loader: env-check
 	bash scripts/runtime-libs.sh build/loader-assets/lib
 	bash scripts/build-title.sh --title-id $(LOADER_TITLE_ID) --name "PokeMMO Prospero (dev)" \
 		--sources loader/src --sources loader/platform/ps5 --include loader/include --zlib \
-		--assets build/loader-assets --content-suffix LOADER --download-mib 2048
+		--assets build/loader-assets --content-suffix LOADER --download-mib 2048 \
+		--branding assets/branding
 	@mkdir -p dist && cp build/titles/$(LOADER_TITLE_ID)/dist/$(LOADER_TITLE_ID).zip dist/pokemmo-prospero-loader-$(LOADER_TITLE_ID).zip
 
 package-loader: loader
@@ -70,6 +71,14 @@ package-loader: loader
 # The loader on this PC (no console needed): same adapters, platform/host. Needs a C compiler and zlib headers.
 host-loader:
 	$(MAKE) -f loader/Makefile.host --no-print-directory
+
+# Pictures of the loading screen, keyboard and link box (build/overlay-preview/*.ppm), drawn with Mesa (libegl-dev, libgl-dev).
+OVERLAY_SOURCES := loader/src/overlay.c loader/src/overlay_assets.c loader/src/loading_screen.c loader/src/osk.c loader/src/link_box.c loader/src/qrcodegen.c
+overlay-preview:
+	@mkdir -p build/overlay-preview
+	$${CC:-clang} -std=gnu11 -O1 -g -Wall -Wextra -Wno-unused-parameter -Iloader/include -o build/overlay-preview/preview tools/overlay_preview.c \
+		$(OVERLAY_SOURCES) -lEGL -lGL -lz -lm
+	EGL_PLATFORM=surfaceless build/overlay-preview/preview build/overlay-preview
 
 host-run: host-loader
 	@[[ -f "$(CLIENT_ZIP)" ]] || { echo "no client at $(CLIENT_ZIP): run 'make fetch-client' first"; exit 2; }

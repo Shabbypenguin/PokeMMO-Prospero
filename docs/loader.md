@@ -52,19 +52,39 @@ developer build: `python3 pokemmo_prospero_install.py --client PokeMMO-Client.zi
 Linux part of the zip into the title folder as `client/`; release builds will download the client on the
 console instead). Then run `python3 tools/udplog.py --out loader.log` and start **PokeMMO Prospero (dev)**.
 
-The screen shows one tile per step (green pass, red fail, blue information, yellow running):
+Since loader-8 the screen shows the project logo, one progress bar and a line of status ("Checking files",
+"Installing PokeMMO", "Starting PokeMMO"). It stays up until the client creates its OpenGL window, then hands the
+display over. When starting cannot go on, the bar turns red with a plain-language reason. Hold **Triangle** to see
+the steps behind the bar (green pass, red fail, blue note, yellow running):
 
 | Step | What it answers |
 |------|-----------------|
-| fs.list.app0, fs.list.roms, fs.list.download0 | Does `getdents` list folders where `opendir` was refused? |
-| fs.romread | Can every ROM be opened and its header read? |
-| fs.app0write | Is the title folder writable? Blue = read-only. If it passed, check over FTP whether `/data/homebrew/PPSA27166/prospero-write-test.bin` appeared |
-| fs.download0size | How much the title storage really holds (stops at 2 GiB) |
+| fs.list.app0, fs.list.roms | Does `getdents` list folders where `opendir` was refused? |
+| fs.romread | Can every ROM be opened and its header read? (Note = no ROMs uploaded) |
 | sys.modules | Can system modules (SSL, HTTP, audio, the system keyboard) be loaded at run time, and from which path? |
-| net.https | A HEAD request to dl.pokemmo.com through the system's HTTPS library |
-| audio.tone | Half a second of a quiet tone through the system audio output |
+| net.https | A HEAD request through the system's HTTPS library (Note until it is linked directly; the client does its own HTTPS) |
 | client.install | The developer client copied into the title storage |
 | client.map, client.start, client.end | The client mapped, started, and how it ended |
+
+The storage probes of loader-1 (title folder writes, 1 GiB written to `/download0`) and loader-4's test tone answered
+their questions and no longer run.
+
+### In the game
+
+| Input | Does |
+|-------|------|
+| R3 | On-screen keyboard on/off (select the text field first) |
+| Keyboard up: d-pad / left stick, Cross | Move, type the highlighted key |
+| Keyboard up: Square, Triangle | Delete, space (held: repeat) |
+| Keyboard up: L1 / R1 | Move the text cursor |
+| Keyboard up: L2 / R2 | Symbols page / shift (once, caps lock, off) |
+| Keyboard up: touchpad, Options | Tab (next field), Enter |
+| Keyboard up: L3, Circle | Move the keyboard to the top or bottom, close it |
+| A link in the game | A box with the address and a QR code to open it on a phone; Cross or Circle closes it |
+
+The keyboard (`loader/src/osk.c`) and the link box (`loader/src/link_box.c`) are the loader's own, drawn over the
+game with `loader/src/overlay.c`; nothing typed is kept. `make overlay-preview` draws them (and the loading screen)
+on a PC with Mesa into `build/overlay-preview/`, and checks what the keyboard types.
 
 Nothing in the checks can end the title: faults are caught, and slow calls get a time limit. A fault in the
 client itself is logged with its address (`FATAL signal ...`) and that thread is parked, so the screen and

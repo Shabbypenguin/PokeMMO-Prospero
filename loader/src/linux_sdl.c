@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: MIT AND GPL-3.0-or-later
 // Adapted from PokeMMO-NX (https://github.com/Petit-Prince-dev/PokeMMO-NX, source/linux_sdl.c)
 // Copyright (c) Petit_Prince, MIT license (LICENSES/PokeMMO-NX-MIT.txt). PS5 changes: PokeMMO-Prospero contributors.
-// Changes: the window is ps5-opengl's fixed EGL surface (native window 0); no docking resize; platform time.
+// Changes: the window is ps5-opengl's fixed EGL surface (native window 0); no docking resize; platform time; the loading screen hands
+// over the display (linuxSdlSetDisplayAcquire); links open the link box (QR code); the keyboard is the loader's own (osk.c).
+#include "link_box.h"
+#include "osk.h"
+#include "overlay.h"
 #include "linux_sdl.h"
 #include "diagnostics.h"
 #include "linux_abi.h"
@@ -407,8 +411,11 @@ static bool sdlGlGetAttribute(int attribute, int *value) {
     return true;
 }
 static void sdlGlResetAttributes(void) { memset(gl_attributes, 0, sizeof(gl_attributes)); }
+static void (*display_acquire)(void);
+void linuxSdlSetDisplayAcquire(void (*acquire)(void)) { display_acquire = acquire; }
 static void *sdlGlCreateContext(void *window) {
     (void)window;
+    if (display_acquire) display_acquire();  // the loading screen still has the one window surface: wait until it lets go
     const EGLint config_attributes[] = {EGL_RENDERABLE_TYPE,
                                         EGL_OPENGL_BIT,
                                         EGL_SURFACE_TYPE,
@@ -491,15 +498,18 @@ static void applySizeRequest(void) { atomic_store(&requested_size, 0); }  // the
 static bool sdlGlSwapWindow(void *window) {
     (void)window;
     if (egl_display == EGL_NO_DISPLAY || egl_surface == EGL_NO_SURFACE) return false;
-    if (linuxFilePickerOpen()) {
-        unsigned w, h;
-        screenSize(&w, &h);
+    unsigned w, h;
+    screenSize(&w, &h);
+    if (linuxFilePickerOpen())
         linuxFilePickerDraw(w, h);
-    } else {
-        unsigned w, h;
-        screenSize(&w, &h);
-        linuxSdlCursorDraw(w, h);
-    }  // the file chooser or the cursor, over the frame just drawn
+    else if (oskVisible() || linkBoxVisible()) {  // PS5: the on-screen keyboard and the link box (overlay.c)
+        if (overlayBegin(w, h)) {
+            oskDraw();
+            linkBoxDraw();
+            overlayEnd();
+        }
+    } else
+        linuxSdlCursorDraw(w, h);  // the file chooser, the console's own panels or the cursor, over the frame just drawn
     bool ok = eglSwapBuffers(egl_display, egl_surface);
     if (ok) applySizeRequest();
     unsigned frame = atomic_fetch_add(&frame_counter, 1) + 1;
@@ -539,6 +549,15 @@ static void pumpInput(void) {
             keyboard_button_before = true;
             return;
         }
+        if (linkBoxVisible()) {  // PS5: the link box has the controller until it is closed, as the file chooser
+            linkBoxFeed(&snapshot);
+            LinuxInputSnapshot idle = {0};
+            idle.gamepad = snapshot.gamepad;
+            idle.timestamp_ns = snapshot.timestamp_ns;
+            linuxSdlEventsUpdate(&idle);
+            keyboard_button_before = true;
+            return;
+        }
         // Clicking the right stick brings the keyboard up or down, by hand, whatever the game is doing: the game's own requests for text
         // input are not followed (they only came for some fields).
         bool keyboard_button = snapshot.gamepad && ((snapshot.buttons >> 8) & 1u);  // SDL_GAMEPAD_BUTTON_RIGHT_STICK
@@ -552,8 +571,10 @@ static void pumpInput(void) {
         unsigned width, height;
         screenSize(&width, &height);
         // The console's keyboard uses the controller while it is up: the game sees it at rest until the keyboard is gone and everything is released.
-        if (linuxSdlInputKeyboardVisible())
+        if (linuxSdlInputKeyboardVisible()) {
+            oskFeed(&snapshot);  // PS5: the keyboard is the loader's own (osk.c)
             keyboard_has_pad = true;
+        }
         else if (keyboard_has_pad && padAtRest(&snapshot))
             keyboard_has_pad = false;
         if (keyboard_has_pad) {
@@ -581,11 +602,11 @@ static bool sdlPollEvent(void *event) {
     }
     return linuxSdlEventsPop(event);
 }
-// Links ("open in the browser"): the console has no browser to give, the request is refused and its address written to the log.
+// Links ("open in the browser"): a PS5 title has no browser to give them to, so the address is shown with a QR code (link_box.c).
 static bool sdlOpenUrl(const char *url) {
-    static atomic_uint requests;
-    if (atomic_fetch_add(&requests, 1) < 20) trace("sdl.OpenURL url=%.200s (refused: no browser)", url ? url : "(none)");
-    return false;
+    if (!url || !*url) return false;
+    linkBoxShow(url);
+    return true;
 }
 // Memory streams: the game hands its gamepad database to SDL through one. The mappings are counted and ignored (the controller is described by this project).
 static void *sdlIoFromMem(void *memory, size_t size) { return linuxSdlIoFromMemory(memory, size, true); }

@@ -2,9 +2,10 @@
 // Adapted from PokeMMO-NX (https://github.com/Petit-Prince-dev/PokeMMO-NX, source/linux_sdl_input.c)
 // Copyright (c) Petit_Prince, MIT license (LICENSES/PokeMMO-NX-MIT.txt). PS5 changes: PokeMMO-Prospero contributors.
 // Changes: the PS5 controller (through the platform layer) instead of the Switch's; no touch screen. The Switch's inline keyboard
-// applet has no PS5 counterpart yet (the system keyboard module loads but its functions cannot be looked up): the keyboard is
-// reported unavailable until the on-screen keyboard exists.
+// applet has no PS5 counterpart (the system keyboard module loads but its functions cannot be looked up): the keyboard is the
+// loader's own (osk.c).
 #include "linux_sdl_input.h"
+#include "osk.h"
 #include "diagnostics.h"
 #include "platform.h"
 #include <stdatomic.h>
@@ -48,9 +49,8 @@ bool linuxSdlInputSample(LinuxInputSnapshot *snapshot) {
     return true;
 }
 
-void linuxSdlInputKeyboardRequest(bool show) {
-    if (show) diagnosticsTrace("sdl.keyboard=UNAVAILABLE (the on-screen keyboard is not written yet)");
-}
+// PS5: the loader's own on-screen keyboard (osk.c).
+void linuxSdlInputKeyboardRequest(bool show) { oskShow(show); }
 void linuxSdlInputKeyboardPump(void) {}
-bool linuxSdlInputKeyboardVisible(void) { return false; }
-bool linuxSdlInputKeyboardAvailable(void) { return false; }
+bool linuxSdlInputKeyboardVisible(void) { return oskVisible(); }
+bool linuxSdlInputKeyboardAvailable(void) { return true; }

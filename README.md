@@ -2,9 +2,10 @@
 
 An unofficial effort to run the official, unmodified PokeMMO Linux client natively on a jailbroken PS5.
 
-> **Status: early. PokeMMO does not run on the PS5 yet.** The loader (ported from PokeMMO-NX) runs the client on a
-> Linux PC up to its graphics setup; its first PS5 build (milestone 1) is waiting for a console run. Graphics, input
-> and audio for the client come next. Progress and open questions: [docs/plan.md](docs/plan.md), [docs/loader.md](docs/loader.md).
+> **Status: early, working on a console.** On a PS5 the loader (ported from PokeMMO-NX) starts the official client
+> to its title screen and login, with graphics, audio, the controller and an on-screen keyboard. Developer builds only:
+> the client is uploaded by the installer for now. Progress and open questions: [docs/plan.md](docs/plan.md),
+> [docs/loader.md](docs/loader.md).
 
 ## How it works
 
