@@ -55,6 +55,7 @@ loader: env-check
 	@if [[ -n "$(PROBE_LOG_HOST)" ]]; then echo "$(PROBE_LOG_HOST)" > build/loader-assets/loghost.txt; \
 	 else echo "(no PROBE_LOG_HOST: UDP broadcast only)" > build/loader-assets/README.txt; fi
 	bash scripts/runtime-libs.sh build/loader-assets/lib
+	cp assets/settings/defaults.properties build/loader-assets/defaults.properties
 	bash scripts/build-title.sh --title-id $(LOADER_TITLE_ID) --name "PokeMMO Prospero (dev)" \
 		--sources loader/src --sources loader/platform/ps5 --include loader/include --zlib \
 		--assets build/loader-assets --content-suffix LOADER --download-mib 2048 \

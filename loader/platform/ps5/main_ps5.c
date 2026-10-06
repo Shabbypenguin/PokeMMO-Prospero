@@ -37,7 +37,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define LOADER_MILESTONE "loader-11"
+#define LOADER_MILESTONE "loader-12"
 // ps5-opengl's app heap (malloc of the loader and of everything the client allocates with malloc): from direct memory.
 const size_t ps5_opengl_heap_size = 768u << 20;
 
@@ -518,6 +518,106 @@ static void backupSettings(void) {
     }
 }
 
+// Default settings (assets/settings/defaults.properties, shipped in the title): written in full when the game has no settings yet,
+// and applied once per DEFAULTS_VERSION to settings that exist, so that what the player changes afterwards stays. The version
+// applied is kept in config/.prospero-defaults. Lines of other keys are left exactly as they were.
+#define DEFAULTS "/app0/assets/defaults.properties"
+#define DEFAULTS_MARK GAME "/config/.prospero-defaults"
+static char *readWhole(const char *path) {
+    int fd = open(path, O_RDONLY);
+    struct stat info;
+    char *text = NULL;
+    if (fd >= 0 && !fstat(fd, &info) && info.st_size < (1 << 20) && (text = malloc((size_t)info.st_size + 1))) {
+        ssize_t got = read(fd, text, (size_t)info.st_size);
+        text[got > 0 ? got : 0] = 0;
+    }
+    if (fd >= 0) close(fd);
+    return text;
+}
+static bool writeWhole(const char *path, const char *text) {
+    char temporary[512];
+    snprintf(temporary, sizeof(temporary), "%s.prospero-new", path);
+    if (!makeParents(path)) return false;
+    int fd = open(temporary, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) return false;
+    size_t length = strlen(text), done = 0;
+    while (done < length) {
+        ssize_t wrote = write(fd, text + done, length - done);
+        if (wrote <= 0) break;
+        done += (size_t)wrote;
+    }
+    close(fd);
+    if (done != length || rename(temporary, path)) {
+        unlink(temporary);
+        return false;
+    }
+    return true;
+}
+static void applyDefaults(void) {
+    char *defaults = readWhole(DEFAULTS);
+    if (!defaults) {
+        say("settings defaults: %s missing", DEFAULTS);
+        return;
+    }
+    int version = 0, applied = 0;
+    const char *found = strstr(defaults, "DEFAULTS_VERSION=");
+    if (found) version = atoi(found + 17);
+    char mark[32] = "";
+    if (readSmall(DEFAULTS_MARK, mark, sizeof(mark))) applied = atoi(mark);
+    if (applied >= version) {
+        free(defaults);
+        return;
+    }
+    char *current = readWhole(SETTINGS);
+    size_t capacity = (current ? strlen(current) : 0) + strlen(defaults) + 64;
+    char *result = malloc(capacity);
+    if (!result) {
+        free(defaults);
+        free(current);
+        return;
+    }
+    result[0] = 0;
+    // The player's lines, except those the defaults set.
+    unsigned replaced = 0, added = 0;
+    for (const char *line = current ? current : ""; *line;) {
+        size_t length = strcspn(line, "\n");
+        size_t key_length = strcspn(line, "=\n");
+        bool overridden = false;
+        if (line[0] != '#' && key_length < length) {
+            for (const char *d = defaults; *d;) {
+                size_t d_length = strcspn(d, "\n"), d_key = strcspn(d, "=\n");
+                if (d[0] != '#' && d_key == key_length && !strncmp(d, line, key_length)) overridden = true;
+                d += d_length;
+                d += *d == '\n';
+            }
+        }
+        if (!overridden) strncat(result, line, length), strcat(result, "\n");
+        replaced += overridden;
+        line += length;
+        line += *line == '\n';
+    }
+    for (const char *d = defaults; *d;) {  // then the defaults' own lines
+        size_t d_length = strcspn(d, "\n");
+        if (d[0] != '#' && d[0] != '\r' && d_length && strncmp(d, "DEFAULTS_VERSION=", 17)) {
+            strncat(result, d, d_length);
+            strcat(result, "\n");
+            ++added;
+        }
+        d += d_length;
+        d += *d == '\n';
+    }
+    bool ok = writeWhole(SETTINGS, result);
+    if (ok) {
+        snprintf(mark, sizeof(mark), "%d\n", version);
+        ok = writeWhole(DEFAULTS_MARK, mark);
+    }
+    say("settings defaults: version %d applied to %s settings (%u lines set, %u replaced)%s", version, current ? "existing" : "new", added, replaced,
+        ok ? "" : " FAILED");
+    free(result);
+    free(defaults);
+    free(current);
+}
+
 // ---- the client run -----------------------------------------------------------------------------------------------------------------
 static _Atomic bool game_finished, release_screen, screen_released;
 static _Atomic uint64_t client_started_ns;
@@ -689,6 +789,7 @@ static void *workMain(void *argument) {
     checkModules();
     checkHttps();
     if (installClient()) {
+        applyDefaults();
         pthread_t game;
         pthread_attr_t attributes;
         pthread_attr_init(&attributes);

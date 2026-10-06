@@ -84,6 +84,9 @@ their questions and no longer run.
 
 The game's settings live in `config/main.properties` in the title storage, which FTP cannot see. The loader copies the
 file to `/data/homebrew/PPSA27166/settings/main.properties` at start and within a minute of any change (loader-11).
+Before the game starts, the loader applies `assets/settings/defaults.properties` (fullscreen 1920x1080, 60 fps, UI scale
+1.25): in full on a new install, and once per `DEFAULTS_VERSION` on an existing one, so later changes in the game stay
+(loader-12). Raise `DEFAULTS_VERSION` to push changed defaults to everyone once.
 
 The keyboard (`loader/src/osk.c`) and the link box (`loader/src/link_box.c`) are the loader's own, drawn over the
 game with `loader/src/overlay.c`; nothing typed is kept. `make overlay-preview` draws them (and the loading screen)
