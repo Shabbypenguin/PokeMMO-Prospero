@@ -37,6 +37,8 @@ keeps PokeMMO-NX's copyright notice in its header and lists what changed (detail
 | `loader/src/linux_dl.c`, `linux_trap.c`, `linux_virtual_stubs.c`, `linux_jit.c`, `linux_threads.c`, `linux_vm.c`, `diagnostics.c`, `game.c` | same names | see each header |
 | `loader/src/linux_stubs_x86_64.c` | `linux_trap_stubs.s`, `linux_virtual_stub_table.s` | rewritten for x86-64 |
 | `loader/src/linux_sync.c`, `linux_semaphore.c`, `linux_tls.c` | interfaces only | implementations written for this port |
+| `loader/src/linux_sdl.c`, `linux_sdl_events.c`, `linux_sdl_keys.c`, `linux_sdl_io.c`, `linux_sdl_cursor.c`, `linux_audio.c`, `linux_al.c`, `linux_gtk.c`, `linux_file_picker.c` | same names | ps5-opengl surface, platform calls |
+| `loader/src/linux_sdl_input.c`, `linux_audio_out.c` | same names | PS5 controller; silent audio output for now |
 
 ## PS5 platform projects
 
