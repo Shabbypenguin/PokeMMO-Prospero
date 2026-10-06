@@ -495,12 +495,38 @@ void linuxSdlRequestSize(unsigned width, unsigned height) { atomic_store(&reques
 // replaced (the context and everything the game created in it stay) and the game is told that its window was resized. Done by the thread that
 // renders, between two frames. If the new surface cannot be made, the old size is made again.
 static void applySizeRequest(void) { atomic_store(&requested_size, 0); }  // the PS5 picture has one size
+// PS5: the loading screen goes on over the game's own frames until they show something (the client draws black frames
+// while it loads its data), checked every tenth frame by reading a few pixels back; at most three minutes.
+static void (*loading_draw)(void);
+static atomic_bool loading_active;
+static uint64_t loading_since_ns;
+void linuxSdlSetLoadingOverlay(void (*draw)(void)) {
+    loading_draw = draw;
+    loading_since_ns = platformMonotonicNs();
+    atomic_store(&loading_active, draw != NULL);
+}
+static bool drawLoadingOverlay(unsigned w, unsigned h, unsigned frame) {
+    if (!atomic_load(&loading_active)) return false;
+    bool timed_out = platformMonotonicNs() - loading_since_ns > 180000000000ull;
+    if (timed_out || (frame % 10 == 0 && overlayPictureHasContent(w, h))) {
+        atomic_store(&loading_active, false);
+        trace("sdl.loading_overlay=DONE frame=%u reason=%s", frame, timed_out ? "time limit" : "the game shows a picture");
+        return false;
+    }
+    if (overlayBegin(w, h)) {
+        loading_draw();
+        overlayEnd();
+    }
+    return true;
+}
 static bool sdlGlSwapWindow(void *window) {
     (void)window;
     if (egl_display == EGL_NO_DISPLAY || egl_surface == EGL_NO_SURFACE) return false;
     unsigned w, h;
     screenSize(&w, &h);
-    if (linuxFilePickerOpen())
+    if (drawLoadingOverlay(w, h, atomic_load(&frame_counter) + 1)) {
+        // the loading screen covers the game's black frames (nothing else is drawn over it)
+    } else if (linuxFilePickerOpen())
         linuxFilePickerDraw(w, h);
     else if (oskVisible() || linkBoxVisible()) {  // PS5: the on-screen keyboard and the link box (overlay.c)
         if (overlayBegin(w, h)) {

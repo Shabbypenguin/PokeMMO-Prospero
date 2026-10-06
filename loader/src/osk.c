@@ -199,9 +199,9 @@ void oskFeed(const LinuxInputSnapshot *s) {
 void oskDraw(void) {
     if (!atomic_load(&visible)) return;
     lock();
-    const float unit = 112, gap = 8, key_h = 70, pad = 24, legend_h = 76;
+    const float unit = 84, gap = 6, key_h = 54, pad = 16, legend_h = 56;
     const float panel_w = 10 * unit + 2 * pad, panel_h = ROWS * key_h + legend_h + 2 * pad;
-    const float panel_x = (OVERLAY_WIDTH - panel_w) / 2, panel_y = k.top ? 24 : OVERLAY_HEIGHT - panel_h - 24;
+    const float panel_x = (OVERLAY_WIDTH - panel_w) / 2, panel_y = k.top ? 20 : OVERLAY_HEIGHT - panel_h - 20;
     overlayRect(panel_x, panel_y, panel_w, panel_h, 0x081228EEu);
     overlayFrame(panel_x, panel_y, panel_w, panel_h, 2, 0x5AA0E8FFu);
     for (int row = 0; row < ROWS; ++row) {
@@ -213,13 +213,13 @@ void oskDraw(void) {
             bool lit = (item->kind == KEY_SHIFT && k.shift) || (item->kind == KEY_PAGE && k.symbols);
             overlayRect(x + gap / 2, y + gap / 2, w - gap, key_h - gap, selected ? 0x5AA0E8FFu : lit ? 0x2E4F86FFu : 0x16264AFFu);
             const char *label = item->kind == KEY_SHIFT && k.shift == 2 ? "CAPS" : item->label;
-            float size = item->kind == KEY_TEXT ? 40 : 30;
+            float size = item->kind == KEY_TEXT ? 32 : 24;
             overlayTextCentered(x + w / 2, y + (key_h - size) / 2, label, size, selected ? 0x050B18FFu : 0xFFFFFFFFu);
             x += w;
         }
     }
-    const float legend_y = panel_y + pad + ROWS * key_h + 10;
-    overlayTextCentered(OVERLAY_WIDTH / 2, legend_y, "\x01 Type     \x03 Delete     \x04 Space     \x02 Close", 26, 0xA8B8D8FFu);
-    overlayTextCentered(OVERLAY_WIDTH / 2, legend_y + 34, "L1/R1 Cursor   L2 Symbols   R2 Shift   Touchpad Tab   Options Enter   L3 Move", 26, 0xA8B8D8FFu);
+    const float legend_y = panel_y + pad + ROWS * key_h + 6;
+    overlayTextCentered(OVERLAY_WIDTH / 2, legend_y, "\x01 Type     \x03 Delete     \x04 Space     \x02 Close", 21, 0xA8B8D8FFu);
+    overlayTextCentered(OVERLAY_WIDTH / 2, legend_y + 26, "L1/R1 Cursor   L2 Symbols   R2 Shift   Touchpad Tab   Options Enter   L3 Move", 20, 0xA8B8D8FFu);
     unlock();
 }

@@ -18,6 +18,8 @@ extern const LinuxVirtualLibrary linuxSdlLibrary, linuxEglLibrary, linuxGlxLibra
 void linuxSdlStopRequest(void);  // the next SDL_PollEvent reports SDL_EVENT_QUIT (applet exit)
 // The picture should get this size (the console was docked or undocked). Any thread may ask; the thread that renders does it between two frames.
 void linuxSdlRequestSize(unsigned width, unsigned height);
+// PS5: draws the loading screen over the game's frames until they show something (between overlayBegin and overlayEnd).
+void linuxSdlSetLoadingOverlay(void (*draw)(void));
 // Called on the game's thread before its window surface is made (PS5: the loading screen owns the only surface until then).
 void linuxSdlSetDisplayAcquire(void (*acquire)(void));
 bool linuxSdlReset(void);  // tears down the EGL surface and context created for the window

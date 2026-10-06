@@ -70,13 +70,13 @@ static void drawAddress(float centre_x, float y, float size, float max_width) {
 void linkBoxDraw(void) {
     if (!atomic_load(&visible)) return;
     lock();
-    const float panel_w = 980, panel_h = 900, panel_x = (OVERLAY_WIDTH - panel_w) / 2, panel_y = (OVERLAY_HEIGHT - panel_h) / 2;
+    const float panel_w = 720, panel_h = 680, panel_x = (OVERLAY_WIDTH - panel_w) / 2, panel_y = (OVERLAY_HEIGHT - panel_h) / 2;
     const float centre = OVERLAY_WIDTH / 2;
-    overlayRect(0, 0, OVERLAY_WIDTH, OVERLAY_HEIGHT, 0x000000A0u);
+    overlayRect(0, 0, OVERLAY_WIDTH, OVERLAY_HEIGHT, 0x00000080u);
     overlayRect(panel_x, panel_y, panel_w, panel_h, 0x081228FFu);
     overlayFrame(panel_x, panel_y, panel_w, panel_h, 2, 0x5AA0E8FFu);
-    overlayTextCentered(centre, panel_y + 40, "Open this link on your phone", 46, 0xFFFFFFFFu);
-    float box = 500, box_x = centre - box / 2, box_y = panel_y + 120;
+    overlayTextCentered(centre, panel_y + 28, "Open this link on your phone", 34, 0xFFFFFFFFu);
+    float box = 400, box_x = centre - box / 2, box_y = panel_y + 86;
     overlayRect(box_x, box_y, box, box, 0xFFFFFFFFu);
     if (have_qr) {
         int size = qrcodegen_getSize(qr);
@@ -95,7 +95,7 @@ void linkBoxDraw(void) {
             }
     } else
         overlayTextCentered(centre, box_y + box / 2 - 20, "(too long for a QR code)", 32, 0x000000FFu);
-    drawAddress(centre, box_y + box + 40, 30, panel_w - 80);
-    overlayTextCentered(centre, panel_y + panel_h - 70, "\x01 / \x02  Close", 34, 0xA8B8D8FFu);
+    drawAddress(centre, box_y + box + 24, 24, panel_w - 60);
+    overlayTextCentered(centre, panel_y + panel_h - 52, "\x01 / \x02  Close", 26, 0xA8B8D8FFu);
     unlock();
 }

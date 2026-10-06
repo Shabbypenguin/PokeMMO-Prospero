@@ -36,7 +36,7 @@
 #include <sys/ucontext.h>
 #include <unistd.h>
 
-#define LOADER_MILESTONE "loader-8"
+#define LOADER_MILESTONE "loader-9"
 // ps5-opengl's app heap (malloc of the loader and of everything the client allocates with malloc): from direct memory.
 const size_t ps5_opengl_heap_size = 768u << 20;
 
@@ -509,6 +509,7 @@ static void acquireDisplay(void) {
     atomic_store(&release_screen, true);
     while (!atomic_load(&screen_released)) sceKernelUsleep(5000);
 }
+static void drawLoadingInGame(void);
 static void *gameThread(void *argument) {
     (void)argument;
     // This project's SDL3, EGL/GLX, OpenAL and GTK (the file chooser), adapted from PokeMMO-NX.
@@ -520,6 +521,7 @@ static void *gameThread(void *argument) {
     for (unsigned i = 0; i < 4; ++i) virtual_libraries[4 + i] = linuxGtkLibraries[i];
     linuxAudioOutAttach();
     linuxSdlSetDisplayAcquire(acquireDisplay);
+    linuxSdlSetLoadingOverlay(drawLoadingInGame);
     atomic_store(&client_started_ns, platformMonotonicNs());
     mark("client.map", RUNNING);
     static const char *const options[] = {"-XX:MaxHeapSize=640m", "-XX:MaxNewSize=128m", NULL};
@@ -632,6 +634,15 @@ static void loadingView(LoadingView *view, LoadingStep *step_view, char *detail,
     }
     if (stepState("fs.romread") == INFO && !atomic_load(&rom_count)) view->warning = "No ROMs found: add them with the installer to play.";
 }
+// The same screen over the game's first (black) frames, on the game's thread and context.
+static void drawLoadingInGame(void) {
+    static unsigned frame;
+    LoadingView view;
+    LoadingStep step_view[STEP_COUNT];
+    char detail[96];
+    loadingView(&view, step_view, detail, sizeof(detail), ++frame);
+    loadingScreenDraw(&view);
+}
 static void drawScreen(unsigned frame) {
     if (!overlayBegin((unsigned)width, (unsigned)height)) {
         drawTilesPlain(frame);
@@ -684,6 +695,7 @@ int main(void) {
     for (unsigned frame = 1;; ++frame) {
         if (atomic_load(&release_screen) && !atomic_load(&screen_released)) {
             if (screen) {
+                overlayContextLost();  // the game's context may get this one's address
                 eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
                 eglDestroyContext(display, screen_context);
                 eglDestroySurface(display, surface);  // the display stays initialized: the client's SDL initializes it again

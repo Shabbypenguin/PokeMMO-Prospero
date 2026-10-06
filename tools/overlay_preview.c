@@ -8,7 +8,9 @@
 #include "osk.h"
 #include "overlay.h"
 #include <EGL/egl.h>
+#define GL_GLEXT_PROTOTYPES 1
 #include <GL/gl.h>
+#include <GL/glext.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -101,6 +103,19 @@ int main(int argc, char **argv) {
         save(path);
     }
 
+    // A game's leftovers that must neither break the overlay nor be lost: a buffer, an enabled array, odd unpack settings.
+    GLuint game_buffer, unpack_buffer;
+    glGenBuffers(1, &game_buffer);
+    glBindBuffer(GL_ARRAY_BUFFER, game_buffer);
+    glBufferData(GL_ARRAY_BUFFER, 64, NULL, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, 0, NULL);
+    glGenBuffers(1, &unpack_buffer);
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, unpack_buffer);
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, 7);
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(0, 0, 10, 10);
+
     // The keyboard: type "Ab1!" then Tab, Enter; R2 is an axis, so shift goes through the Shift key.
     oskShow(true);
     pad(0);           // first sample after opening is ignored
@@ -127,6 +142,27 @@ int main(int argc, char **argv) {
     printf("typed: %s\n", typed);
     tap(1);   // Circle closes
     printf("keyboard visible after Circle: %d\n", oskVisible());
+    GLint value = 0, enabled = 0;
+    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &value);
+    glGetVertexAttribiv(3, GL_VERTEX_ATTRIB_ARRAY_ENABLED, &enabled);
+    GLint row_length = 0, unpack = 0;
+    glGetIntegerv(GL_UNPACK_ROW_LENGTH, &row_length);
+    glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &unpack);
+    printf("game state kept: array_buffer=%d attrib3=%d row_length=%d unpack=%d scissor=%d\n", value == (GLint)game_buffer, enabled,
+           row_length, unpack == (GLint)unpack_buffer, glIsEnabled(GL_SCISSOR_TEST));
+    glDisable(GL_SCISSOR_TEST);
+    glClearColor(0, 0, 0, 1);
+    glClear(GL_COLOR_BUFFER_BIT);
+    printf("black picture has content: %d\n", overlayPictureHasContent(W, H));
+    gameFrame();
+    printf("game picture has content: %d\n", overlayPictureHasContent(W, H));
+
+    // A new context in place of the old one (as the game's replaces the loading screen's): objects are made again.
+    overlayContextLost();
+    eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+    eglDestroyContext(display, context);
+    context = eglCreateContext(display, config, EGL_NO_CONTEXT, NULL);
+    eglMakeCurrent(display, surface, surface, context);
 
     linkBoxShow("https://pokemmo.com/en/account/forgot_password/");
     gameFrame();
