@@ -6,7 +6,8 @@
 //   2. its last 64 KiB: the end-of-central-directory record, then the central directory: the list of entries;
 //   3. revision.txt alone, to know which revision it is;
 //   4. to update: the selected entries, fetched as a couple of large ranges (entries close together share one request), each
-//      unpacked with zlib as it arrives and checked against its CRC-32. A dropped connection resumes from the entry it was in.
+//      unpacked with zlib as it arrives and checked against its CRC-32, into an empty client slot (slots.c). A dropped
+//      connection resumes where it stopped.
 // The selection is the installer's (installer/pokemmo_prospero_install.py, client_entries): everything but other systems'
 // binaries, launchers, logs and ROMs.
 #include "updater.h"
@@ -377,7 +378,7 @@ int updaterCheck(const char *url, const char *known_etag, UpdaterRemote *r, char
 }
 
 // ---- download -------------------------------------------------------------------------------------------------------------------------
-int updaterDownload(const char *url, const UpdaterRemote *r, const char *staging, UpdaterProgress *progress, char *error, size_t size) {
+int updaterDownload(const char *url, const UpdaterRemote *r, const char *folder, UpdaterProgress *progress, char *error, size_t size) {
     atomic_store(&progress->done, 0);
     atomic_store(&progress->total, r->download_bytes);
     Stream s = {0};
@@ -387,7 +388,7 @@ int updaterDownload(const char *url, const UpdaterRemote *r, const char *staging
         for (unsigned index = first; index <= last; ++index) {
             const UpdaterEntry *e = &r->entries[index];
             char path[1024];
-            snprintf(path, sizeof(path), "%s/%s", staging, e->name);
+            snprintf(path, sizeof(path), "%s/%s", folder, e->name);
             int out = makeParents(path) ? open(path, O_WRONLY | O_CREAT | O_TRUNC, e->executable ? 0755 : 0644) : -1;
             if (out < 0) {
                 fail(error, size, "cannot write %s (errno %d)", path, errno);
@@ -431,35 +432,6 @@ int updaterDownload(const char *url, const UpdaterRemote *r, const char *staging
     }
     atomic_store(&progress->done, r->download_bytes);
     return 0;
-}
-
-// ---- apply ------------------------------------------------------------------------------------------------------------------------------
-int updaterApply(const UpdaterRemote *r, const char *staging, const char *game, char *error, size_t size) {
-    const UpdaterEntry *revision = NULL;
-    unsigned moved = 0, kept = 0;
-    for (unsigned pass = 0; pass < 2; ++pass)
-        for (unsigned i = 0; i < r->count; ++i) {
-            const UpdaterEntry *e = &r->entries[i];
-            bool is_revision = !strcmp(e->name, "revision.txt");
-            if (is_revision) revision = e;
-            if (is_revision != (pass == 1)) continue;  // revision.txt last
-            char from[1024], to[1024];
-            snprintf(from, sizeof(from), "%s/%s", staging, e->name);
-            snprintf(to, sizeof(to), "%s/%s", game, e->name);
-            struct stat info;
-            if (!strncmp(e->name, "config/", 7) && !stat(to, &info)) {  // the player's settings stay
-                unlink(from);
-                ++kept;
-                continue;
-            }
-            if (!makeParents(to) || rename(from, to)) {
-                fail(error, size, "cannot move %s into place (errno %d)", e->name, errno);
-                return -1;
-            }
-            ++moved;
-        }
-    diagnosticsTrace("updater: applied revision %s: %u files moved, %u settings files kept", r->revision, moved, kept);
-    return revision ? 0 : -1;
 }
 
 void updaterFree(UpdaterRemote *r) {

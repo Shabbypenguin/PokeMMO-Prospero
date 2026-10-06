@@ -82,6 +82,16 @@ their questions and no longer run.
 | Keyboard up: L3, Circle | Move the keyboard to the top or bottom, close it |
 | A link in the game | Opens in the PS5 web browser (the PS button brings the game back); if the browser cannot start, a box shows the address and a QR code |
 
+### Client slots (loader-18)
+
+`/download0/root/slots/a` and `slots/b` each hold a complete client (a `.prospero-complete` marker names its revision);
+`slots/state` says which is active. A new client (download or developer copy) goes into the other slot, which becomes
+active "on trial". The trial ends when the game shows its first picture. If the game ends before that, or a start finds
+a trial still open (the previous start crashed), the loader goes back to the previous slot, says so on the loading
+screen, and does not offer that revision again until a newer one is published. The settings live in
+`/download0/root/shared/config`, mounted over the game's `/game/config`, so both slots share them. The single client
+folder of loader-17 and earlier (`/download0/root/game`) becomes slot a on the first start.
+
 ### ROMs (loader-16)
 
 Before the game starts the loader reads the header of every file in the title's `roms/` folder (`loader/src/roms.c`):
@@ -99,8 +109,7 @@ ETag of the installed revision is kept in `/download0/root/update-etag`). When i
 `revision.txt` are read with range requests; a newer revision is offered on the loading screen (Cross: download,
 Circle: skip; download after six seconds). With no client installed it is downloaded straight away. Only what a PS5
 runs is fetched (about 93 MB of the 271 MB zip, in two requests), unpacked as it arrives, every file checked against its
-CRC-32, staged in `/download0/root/update`, then moved into place with `revision.txt` last. The player's `config/`
-files stay. A dropped connection resumes where it stopped. HTTPS is the system's own (`libSceHttp`, certificates checked).
+CRC-32, into the client slot that is not in use (below). A dropped connection resumes where it stopped. HTTPS is the system's own (`libSceHttp`, certificates checked).
 `make updater-test` runs the same code on a PC against `tools/range_server.py` (`--drop-every` exercises the resume).
 The installer's `--redownload-client` makes the console forget its client once and download it again.
 

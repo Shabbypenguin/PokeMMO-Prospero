@@ -85,11 +85,11 @@ overlay-preview:
 # The client updater against a local copy of the client zip served by tools/range_server.py (plain HTTP, with drops).
 UPDATER_ZIP ?= private/PokeMMO-Client.zip
 updater-test:
-	@mkdir -p build/updater-test && rm -rf build/updater-test/staging build/updater-test/game
+	@mkdir -p build/updater-test && rm -rf build/updater-test/slot
 	$${CC:-clang} -std=gnu11 -O1 -g -Wall -Wextra -Wno-unused-parameter -D_GNU_SOURCE -Iloader/include -o build/updater-test/updater_test \
 		tools/updater_test.c loader/src/updater.c loader/src/diagnostics.c loader/platform/host/platform_host.c -lz -lpthread
 	python3 tools/range_server.py $(UPDATER_ZIP) 8765 --drop-every 30000000 & server=$$!; sleep 1; \
-	build/updater-test/updater_test http://127.0.0.1:8765/PokeMMO-Client.zip build/updater-test/staging build/updater-test/game; status=$$?; \
+	build/updater-test/updater_test http://127.0.0.1:8765/PokeMMO-Client.zip build/updater-test/slot -; status=$$?; \
 	kill $$server; exit $$status
 
 host-run: host-loader

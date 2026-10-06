@@ -33,11 +33,8 @@ typedef struct {
 // Fills `remote` from the published zip. 1 when its ETag equals `known_etag` (nothing else is read then), 0 when read in full,
 // -1 on failure (reason in `error`).
 int updaterCheck(const char *url, const char *known_etag, UpdaterRemote *remote, char *error, size_t error_size);
-// Downloads and unpacks every entry into `staging`, checking each one's CRC. 0 or -1.
-int updaterDownload(const char *url, const UpdaterRemote *remote, const char *staging, UpdaterProgress *progress, char *error, size_t error_size);
-// Moves the staged files into `game`; the player's config/ files stay; revision.txt goes last, so an interrupted update is
-// redone on the next start. 0 or -1.
-int updaterApply(const UpdaterRemote *remote, const char *staging, const char *game, char *error, size_t error_size);
+// Downloads and unpacks every entry into `folder` (an empty client slot), checking each one's CRC. 0 or -1.
+int updaterDownload(const char *url, const UpdaterRemote *remote, const char *folder, UpdaterProgress *progress, char *error, size_t error_size);
 void updaterFree(UpdaterRemote *remote);
 // Revision numbers compared as numbers ("32920" < "33001"); an empty or unreadable one is older than anything.
 int updaterCompareRevisions(const char *a, const char *b);

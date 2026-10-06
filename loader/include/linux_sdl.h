@@ -20,6 +20,8 @@ void linuxSdlStopRequest(void);  // the next SDL_PollEvent reports SDL_EVENT_QUI
 void linuxSdlRequestSize(unsigned width, unsigned height);
 // PS5: draws the loading screen over the game's frames until they show something (between overlayBegin and overlayEnd).
 void linuxSdlSetLoadingOverlay(void (*draw)(void));
+// PS5: called once, when the game's frames first show something (or after the loading screen's time limit).
+void linuxSdlSetFirstPicture(void (*callback)(void));
 // Called on the game's thread before its window surface is made (PS5: the loading screen owns the only surface until then).
 void linuxSdlSetDisplayAcquire(void (*acquire)(void));
 bool linuxSdlReset(void);  // tears down the EGL surface and context created for the window

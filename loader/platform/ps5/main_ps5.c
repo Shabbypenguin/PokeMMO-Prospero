@@ -17,6 +17,7 @@
 #include "overlay.h"
 #include "platform.h"
 #include "roms.h"
+#include "slots.h"
 #include "updater.h"
 #include "prospero_version.h"  // PROSPERO_VERSION, PROSPERO_TITLE_ID (generated at build time)
 #include <EGL/egl.h>
@@ -39,7 +40,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define LOADER_MILESTONE "loader-17"
+#define LOADER_MILESTONE "loader-18"
 // ps5-opengl's app heap (malloc of the loader and of everything the client allocates with malloc): from direct memory.
 const size_t ps5_opengl_heap_size = 768u << 20;
 
@@ -197,7 +198,12 @@ static void waitForRequiredRom(void) {
 // ---- the client: copied from the title folder (dev builds) into the title storage, where it can write next to itself ------------------
 #define CLIENT_SOURCE "/app0/client"
 #define ROOT "/download0/root"
-#define GAME ROOT "/game"
+// loader-18: the client lives in one of two slots (slots.c); `active_slot` is the one that starts, `target_slot` receives a
+// new client (the other one) before it is switched to.
+static SlotState slot_state;
+static pthread_mutex_t slot_lock = PTHREAD_MUTEX_INITIALIZER;
+static char active_dir[300];
+static char active_revision[64];  // of the active slot, "" when there is no client
 static bool readSmall(const char *path, char *out, size_t size) {
     int fd = open(path, O_RDONLY);
     if (fd < 0) return false;
@@ -253,23 +259,26 @@ static void noteRevision(const char *revision) {
     size_t length = strcspn(revision, "\r\n");
     snprintf(client_revision, sizeof(client_revision), "%.*s", (int)(length < 60 ? length : 60), revision);
 }
-// Developer builds: the client the installer uploaded (--client) is copied in when nothing newer is installed already.
+static void switchTo(char slot, const char *revision);
+// Developer builds: the client the installer uploaded (--client) goes into the other slot when it is newer than the active one.
 static bool installClient(void) {
     mark("client.dev", RUNNING);
-    char source_revision[64] = "", installed_revision[64] = "";
-    readSmall(GAME "/revision.txt", installed_revision, sizeof(installed_revision));
-    noteRevision(installed_revision);
+    char source_revision[64] = "", installed_revision[64] = "", target[300];
+    snprintf(installed_revision, sizeof(installed_revision), "%s", active_revision);
+    char slot = slotsOther(slot_state.active ? slot_state.active : 'b');
+    slotsPath(slot, target, sizeof(target));
     if (!readSmall(CLIENT_SOURCE "/revision.txt", source_revision, sizeof(source_revision))) {
         say("client dev: no client uploaded to the title folder (the updater provides it)");
         mark("client.dev", INFO);
         return true;
     }
-    if (updaterCompareRevisions(source_revision, installed_revision) <= 0) {
-        say("client dev: uploaded revision %s, installed %s: nothing to copy", source_revision, installed_revision);
+    if (updaterCompareRevisions(source_revision, installed_revision) <= 0 || !strcmp(source_revision, slot_state.failed)) {
+        say("client dev: uploaded revision %s, installed %s%s: nothing to copy", source_revision, installed_revision,
+            !strcmp(source_revision, slot_state.failed) ? " (it did not start before)" : "");
         mark("client.dev", PASS);
         return true;
     }
-    noteRevision(source_revision);
+    slotsClear(slot);
     int fd = open(CLIENT_SOURCE "/manifest.txt", O_RDONLY);
     struct stat info;
     char *manifest = NULL;
@@ -305,7 +314,7 @@ static bool installClient(void) {
         if (sscanf(line, "%llu %399[^\n]", &size, relative) == 2 && !strstr(relative, "..") && strcmp(relative, "revision.txt")) {
             char from[512], to[512];
             snprintf(from, sizeof(from), CLIENT_SOURCE "/%s", relative);
-            snprintf(to, sizeof(to), GAME "/%s", relative);
+            snprintf(to, sizeof(to), "%s/%s", target, relative);
             ok = copyFile(from, to, buffer, buffer_size);
             ++files;
             bytes += size;
@@ -317,7 +326,11 @@ static bool installClient(void) {
         line += strspn(line, "\r\n");
     }
     // The revision goes last: an interrupted copy is redone on the next start.
-    if (ok) ok = copyFile(CLIENT_SOURCE "/revision.txt", GAME "/revision.txt", buffer, buffer_size);
+    char revision_path[340];
+    snprintf(revision_path, sizeof(revision_path), "%s/revision.txt", target);
+    if (ok) ok = copyFile(CLIENT_SOURCE "/revision.txt", revision_path, buffer, buffer_size);
+    if (ok) ok = slotsMarkComplete(slot, source_revision);
+    if (ok) switchTo(slot, source_revision);
     free(buffer);
     free(manifest);
     say("client install: %s, %u files, %llu MiB in %.1f s", ok ? "done" : "FAILED", files, bytes >> 20, (double)(platformMonotonicNs() - start) / 1e9);
@@ -329,8 +342,7 @@ static bool installClient(void) {
 // A newer revision is offered on the loading screen (Cross: download, Circle: skip; download after a few seconds); without any
 // client installed it is downloaded straight away. The published ETag of the installed revision is kept, so an unchanged
 // client costs one HEAD request.
-#define UPDATE_STAGING ROOT "/update"
-#define UPDATE_ETAG ROOT "/update-etag"
+#define UPDATE_ETAG ROOT "/update-etag"  // the published zip's ETag when the active slot holds its revision
 #define PROMPT_SECONDS 6
 enum { UPDATE_IDLE, UPDATE_CHECKING, UPDATE_PROMPT, UPDATE_DOWNLOADING, UPDATE_APPLYING };
 enum { CHOICE_NONE, CHOICE_DOWNLOAD, CHOICE_SKIP };
@@ -348,11 +360,79 @@ static bool writeSmall(const char *path, const char *text) {
     close(fd);
     return ok;
 }
-static void updateClient(void) {
+// ---- slots (loader-18) ------------------------------------------------------------------------------------------------------------
+// A new client (download or developer copy) goes into the other slot and is switched to "on trial"; the trial ends when the
+// game shows its first picture (gameShowedPicture). A start that finds a trial still open goes back to the previous slot.
+static void switchTo(char slot, const char *revision) {
+    pthread_mutex_lock(&slot_lock);
+    if (slot_state.active && slot_state.active != slot) slot_state.previous = slot_state.active;
+    slot_state.active = slot;
+    slot_state.trial = true;
+    slotsSave(&slot_state);
+    slotsPath(slot, active_dir, sizeof(active_dir));
+    snprintf(active_revision, sizeof(active_revision), "%s", revision);
+    pthread_mutex_unlock(&slot_lock);
+    noteRevision(revision);
+    say("slots: switched to slot %c (revision %s), on trial until the game shows a picture", slot, revision);
+}
+static void gameShowedPicture(void) {
+    pthread_mutex_lock(&slot_lock);
+    if (slot_state.trial) {
+        slot_state.trial = false;
+        slot_state.failed[0] = 0;
+        slotsSave(&slot_state);
+        say("slots: revision %s started: slot %c confirmed", active_revision, slot_state.active);
+    }
+    pthread_mutex_unlock(&slot_lock);
+}
+// The game ended before its first picture while on trial: back to the previous slot for the next start.
+static bool revertTrial(const char *why) {
+    pthread_mutex_lock(&slot_lock);
+    char revision[64] = "";
+    bool reverted = false;
+    if (slot_state.trial && slot_state.previous && slotsRevision(slot_state.previous, revision, sizeof(revision))) {
+        snprintf(slot_state.failed, sizeof(slot_state.failed), "%s", active_revision);
+        char failed = slot_state.active;
+        slot_state.active = slot_state.previous;
+        slot_state.previous = failed;
+        slot_state.trial = false;
+        slotsSave(&slot_state);
+        say("slots: revision %s did not start (%s): back to slot %c, revision %s", active_revision, why, slot_state.active, revision);
+        reverted = true;
+    }
+    pthread_mutex_unlock(&slot_lock);
+    return reverted;
+}
+static char slot_notice[160];
+static void prepareSlots(void) {
+    slotsInit(ROOT);
+    slotsMigrate();
+    if (!slotsLoad(&slot_state)) memset(&slot_state, 0, sizeof(slot_state));
+    if (slot_state.trial) {
+        char failed[64];
+        snprintf(failed, sizeof(failed), "%s", "");
+        slotsRevision(slot_state.active, failed, sizeof(failed));
+        snprintf(active_revision, sizeof(active_revision), "%s", failed);
+        if (revertTrial("the previous start ended before the game showed a picture")) {
+            char now[64] = "";
+            slotsRevision(slot_state.active, now, sizeof(now));
+            snprintf(slot_notice, sizeof(slot_notice), "PokeMMO revision %s did not start: back to revision %s.", failed, now);
+        }
+    }
+    active_revision[0] = 0;
+    if (slot_state.active && !slotsRevision(slot_state.active, active_revision, sizeof(active_revision))) slot_state.active = 0;
+    if (slot_state.active) slotsPath(slot_state.active, active_dir, sizeof(active_dir));
+    noteRevision(active_revision);
+    say("slots: active %c (revision %s), previous %c, trial %d, failed %s", slot_state.active ? slot_state.active : '-',
+        active_revision[0] ? active_revision : "none", slot_state.previous ? slot_state.previous : '-', slot_state.trial, slot_state.failed[0] ? slot_state.failed : "-");
+}
+
+static void updateClient(bool forget_installed) {
     mark("client.update", RUNNING);
     atomic_store(&update_phase, UPDATE_CHECKING);
     char installed[64] = "", known_etag[160] = "", error[256] = "";
-    bool have_client = readSmall(GAME "/revision.txt", installed, sizeof(installed));
+    bool have_client = !forget_installed && active_revision[0];
+    if (have_client) snprintf(installed, sizeof(installed), "%s", active_revision);
     readSmall(UPDATE_ETAG, known_etag, sizeof(known_etag));
     UpdaterRemote remote;
     int checked = updaterCheck(UPDATER_URL, have_client ? known_etag : NULL, &remote, error, sizeof(error));
@@ -372,7 +452,8 @@ static void updateClient(void) {
         updaterFree(&remote);
         return;
     }
-    bool newer = checked == 0 && updaterCompareRevisions(remote.revision, installed) > 0;
+    bool newer = checked == 0 && updaterCompareRevisions(remote.revision, installed) > 0 && strcmp(remote.revision, slot_state.failed);
+    if (checked == 0 && !strcmp(remote.revision, slot_state.failed)) say("client update: revision %s did not start before: not offered again", remote.revision);
     if (!newer) {
         if (checked == 0 && !updaterCompareRevisions(remote.revision, installed)) writeSmall(UPDATE_ETAG, remote.etag);
         say("client update: up to date");
@@ -399,20 +480,23 @@ static void updateClient(void) {
         }
     }
     atomic_store(&update_phase, UPDATE_DOWNLOADING);
+    char slot = slotsOther(slot_state.active ? slot_state.active : 'b'), target[300];
+    slotsPath(slot, target, sizeof(target));
+    slotsClear(slot);
     uint64_t start = platformMonotonicNs();
-    int result = updaterDownload(UPDATER_URL, &remote, UPDATE_STAGING, &update_progress, error, sizeof(error));
+    int result = updaterDownload(UPDATER_URL, &remote, target, &update_progress, error, sizeof(error));
     double seconds = (double)(platformMonotonicNs() - start) / 1e9;
     say("client update: download %s, %llu MB in %.0f s%s%s", result ? "FAILED" : "done", (unsigned long long)(atomic_load(&update_progress.done) >> 20), seconds,
         error[0] ? ": " : "", error);
     if (!result) {
         atomic_store(&update_phase, UPDATE_APPLYING);
-        result = updaterApply(&remote, UPDATE_STAGING, GAME, error, sizeof(error));
-        say("client update: install %s%s%s", result ? "FAILED" : "done", error[0] ? ": " : "", error);
+        result = slotsMarkComplete(slot, remote.revision) ? 0 : -1;
+        if (!result) switchTo(slot, remote.revision);
+        say("client update: slot %c %s", slot, result ? "could not be marked complete" : "ready");
     }
     atomic_store(&update_phase, UPDATE_IDLE);
     if (!result) {
         writeSmall(UPDATE_ETAG, remote.etag);
-        noteRevision(remote.revision);
         mark("client.update", PASS);
     } else if (have_client) {
         snprintf(update_warning, sizeof(update_warning), "The update failed: starting revision %s.", installed);
@@ -429,7 +513,8 @@ static void updateClient(void) {
 // ---- the game's settings: a copy where FTP can see it ---------------------------------------------------------------------------
 // The client keeps its settings in config/main.properties next to itself, in the title storage (not visible over FTP). A copy
 // goes to the title folder at start and whenever the file changes (checked every minute): a backup, and the way to read it.
-#define SETTINGS GAME "/config/main.properties"
+#define SHARED_CONFIG ROOT "/shared/config"  // mounted over the game's /game/config (slots.c)
+#define SETTINGS SHARED_CONFIG "/main.properties"
 #define SETTINGS_COPY "/app0/settings/main.properties"
 static void backupSettings(void) {
     static time_t last_time;
@@ -449,7 +534,7 @@ static void backupSettings(void) {
 // and applied once per DEFAULTS_VERSION to settings that exist, so that what the player changes afterwards stays. The version
 // applied is kept in config/.prospero-defaults. Lines of other keys are left exactly as they were.
 #define DEFAULTS "/app0/assets/defaults.properties"
-#define DEFAULTS_MARK GAME "/config/.prospero-defaults"
+#define DEFAULTS_MARK SHARED_CONFIG "/.prospero-defaults"
 static char *readWhole(const char *path) {
     int fd = open(path, O_RDONLY);
     struct stat info;
@@ -571,17 +656,27 @@ static void *gameThread(void *argument) {
     atomic_store(&client_started_ns, platformMonotonicNs());
     mark("client.map", RUNNING);
     static const char *const options[] = {"-XX:MaxHeapSize=640m", "-XX:MaxNewSize=128m", NULL};
+    char client_path[400];
+    snprintf(client_path, sizeof(client_path), "%s/bin/linux/x64/PokeMMO", active_dir);
+    say("client: starting slot %c, revision %s", slot_state.active, active_revision);
     GameConfig config = {.root = ROOT,
-                         .client_path = GAME "/bin/linux/x64/PokeMMO",
-                         // The C++ runtime the client's native libraries need (libstdc++, libgcc_s) ships with the title.
-                         .mounts = {{"/game/roms", "/app0/roms"}, {"/lib", "/app0/assets/lib"}},
-                         .mount_count = 2,
+                         .client_path = client_path,
+                         // The game sees its folder as /game: the active slot, with the shared settings over /game/config. The C++
+                         // runtime the client's native libraries need (libstdc++, libgcc_s) ships with the title.
+                         .mounts = {{"/game", NULL}, {"/game/config", SHARED_CONFIG}, {"/game/roms", "/app0/roms"}, {"/lib", "/app0/assets/lib"}},
+                         .mount_count = 4,
                          .arguments = options,
                          .timeout_seconds = 0,
                          .virtual_libraries = virtual_libraries,
                          .virtual_count = 8};
+    config.mounts[0].native = active_dir;
     mkdir(ROOT, 0755);
+    linuxSdlSetFirstPicture(gameShowedPicture);
     bool ok = gameRun(&config);
+    if (!ok && revertTrial(gameFailure())) {
+        atomic_store(&start_advice, "Close the title with the PS button and start it again: the previous revision will be used.");
+        atomic_store(&start_problem, "This PokeMMO revision could not start");
+    }
     say("client: %s%s", ok ? "ended normally" : "ended: ", ok ? "" : gameFailure());
     mark("client.map", strstr(gameFailure(), "cannot be read") ? FAIL : PASS);
     mark("client.start", strstr(gameFailure(), "cannot be read") ? NOT_RUN : PASS);
@@ -757,6 +852,7 @@ static void drawScreen(unsigned frame) {
 static void *workMain(void *argument) {
     (void)argument;
     listFolder("fs.list.app0", "/app0", NULL, 0);
+    prepareSlots();
     char address[16];
     snprintf(upload_address, sizeof(upload_address), "%s", platformLocalIPv4(address) ? address : "your console's IP (Settings > Network)");
     scanRoms();
@@ -764,16 +860,17 @@ static void *workMain(void *argument) {
     // developer copy this once, so the updater downloads it.
     bool redownload = !unlink("/app0/redownload-client");
     if (redownload) {
-        unlink(GAME "/revision.txt");
         unlink(UPDATE_ETAG);
-        client_revision[0] = 0;
-        say("client: the installer asked for a fresh download");
+        say("client: the installer asked for a fresh download (into the other slot)");
         mark("client.dev", INFO);
     } else
         installClient();
-    updateClient();
-    char installed[64];
-    if (readSmall(GAME "/revision.txt", installed, sizeof(installed))) {
+    updateClient(redownload);
+    if (slot_notice[0] && !atomic_load(&update_warning_set)) {
+        snprintf(update_warning, sizeof(update_warning), "%s", slot_notice);
+        atomic_store(&update_warning_set, true);
+    }
+    if (slot_state.active && active_revision[0]) {
         waitForRequiredRom();
         applyDefaults();
         pthread_t game;

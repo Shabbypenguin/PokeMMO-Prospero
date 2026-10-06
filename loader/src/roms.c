@@ -76,19 +76,19 @@ static void identify(const char *folder, RomFile *f) {
                 return;
             }
         }
-    memcpy(f->code, code, 4);
-    f->code[4] = 0;
+    char game_code[5] = {(char)code[0], (char)code[1], (char)code[2], (char)code[3], 0};
+    memcpy(f->code, game_code, 5);
     f->version = gba ? header[0xBC] : header[0x1E];
     for (unsigned i = 0; i < sizeof(known) / sizeof(known[0]); ++i)
-        if (!strncmp(f->code, known[i].prefix, 3)) {
+        if (!strncmp(game_code, known[i].prefix, 3)) {
             f->game = known[i].game;
             if (f->game >= 0)
-                snprintf(f->note, sizeof(f->note), "%s, %s (%s v%u)", known[i].what, region(f->code[3]), f->code, f->version);
+                snprintf(f->note, sizeof(f->note), "%s, %s (%s v%u)", known[i].what, region(game_code[3]), game_code, f->version);
             else
-                snprintf(f->note, sizeof(f->note), "%s (%s)", known[i].what, f->code);
+                snprintf(f->note, sizeof(f->note), "%s (%s)", known[i].what, game_code);
             return;
         }
-    snprintf(f->note, sizeof(f->note), "%s: not a game PokeMMO uses", f->code);
+    snprintf(f->note, sizeof(f->note), "%s: not a game PokeMMO uses", game_code);
 }
 
 void romsScan(const char *folder, RomScan *scan) {

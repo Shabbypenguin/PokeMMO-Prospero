@@ -498,6 +498,8 @@ static void applySizeRequest(void) { atomic_store(&requested_size, 0); }  // the
 // PS5: the loading screen goes on over the game's own frames until they show something (the client draws black frames
 // while it loads its data), checked every tenth frame by reading a few pixels back; at most three minutes.
 static void (*loading_draw)(void);
+static void (*first_picture)(void);
+void linuxSdlSetFirstPicture(void (*callback)(void)) { first_picture = callback; }
 static atomic_bool loading_active;
 static uint64_t loading_since_ns;
 void linuxSdlSetLoadingOverlay(void (*draw)(void)) {
@@ -511,6 +513,7 @@ static bool drawLoadingOverlay(unsigned w, unsigned h, unsigned frame) {
     if (timed_out || (frame % 10 == 0 && overlayPictureHasContent(w, h))) {
         atomic_store(&loading_active, false);
         trace("sdl.loading_overlay=DONE frame=%u reason=%s", frame, timed_out ? "time limit" : "the game shows a picture");
+        if (first_picture) first_picture();  // the game got as far as drawing: a new client revision has proven itself
         return false;
     }
     if (overlayBegin(w, h)) {
