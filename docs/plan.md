@@ -18,13 +18,14 @@ Client revision 32920, `bin/linux/x64/PokeMMO` (re-run `make analyze` on every r
 | GLSL | legacy (no `#version`, `gl_FragColor`, `texture2D`), one `#version 130` | needs a compatibility context |
 | Code generation | only libffi closure trampolines (LWJGL callbacks) | small exec pool, or prebuilt trampolines |
 
-## Phase 1b — hardware probe (mostly answered; probe-4 for files and text entry)
+## Phase 1b — hardware probe (done)
 
 `probe/` answers on firmware 12.40: compatibility context + legacy GLSL + blending on ps5-opengl,
 `%fs:0x28` stability, thread stack control, address-space reservations, flexible vs direct memory (and direct memory
 mapped at a fixed address inside a reservation, how GraalVM commits its heap), `/download0`,
 network, and which executable-memory route works. probe-2 and probe-3 settled graphics, memory, executable memory and
-network (see Hardware status). Still open: listing directories and reading ROMs, and a text-entry route.
+network (see Hardware status). Directory listing and audio output are verified by the loader's first builds
+instead of another probe run (see Phase 2).
 
 ## Phase 2 — loader core
 
@@ -39,7 +40,9 @@ Port PokeMMO-NX's loader from Horizon/ARM64 to PS5/x86-64:
   `PROT_NONE` reservations from `sceKernelReserveVirtualRange` (works up to 16 GiB) and commits **direct** memory at
   fixed addresses inside them; small mappings stay anonymous. The client gets `-XX:ReservedAddressSpaceSize` below
   16 GiB so its reservation fits.
-- Directory listing: `opendir` is refused in titles (probe-3); `getdents`/`sceKernelGetdents` are tested by probe-4.
+- Directory listing: `opendir` is refused in titles (probe-3) but the client calls `opendir`/`readdir64`. The shim
+  lists with `getdents` (`sceKernelGetdents`), checked on the loader's first run and logged. Fallback if that is
+  refused too: the shim keeps an index of what it creates in `/download0`, and the installer writes a ROM list.
 - Name resolution: `getaddrinfo` crashes in titles, so the shim implements it on `sceNetResolver`.
 - libffi closures: JIT shared memory and RWX pages are refused; closures come from a pool of pages written while RW
   and flipped to RX with `mprotect` (the route probe-3 proved), like PokeMMO-NX's own RW/RX transitions.
@@ -61,9 +64,10 @@ works on a console (see its README and `linux_sdl*.c`):
 | Need | PokeMMO-NX (Switch) | PS5 plan |
 |------|---------------------|----------|
 | Buttons, sticks | virtual SDL3 gamepad; face buttons by printed label (A confirms, B cancels) | same, Cross confirms / Circle cancels (configurable) |
+| Select / Start | Minus → SDL Back, Plus → SDL Start | Create (Share), PS and mic are taken by the system and never reach a title, so **touchpad click → SDL Back** (select) and Options → SDL Start |
 | Gamepad name | kept short ("Switch Controller"): a long name makes the Android theme's settings pages loop and lag | same rule, e.g. "PS5 Controller" |
-| Keyboard (login, chat) | R3 toggles the console's inline keyboard; game input is held at rest while it is up | R3 opens a keyboard; typed text goes to the game as SDL text events. The system IME dialog module doesn't load in a title (probe-3, `0x80020002`), so the plan is our own on-screen keyboard drawn with GL, plus USB keyboards if `sceKeyboard` works (probe-4) |
-| Mouse | L3 toggles a stick-driven cursor (ZR/ZL click) | same on L3, plus the DualSense touchpad as a trackpad (touch to move, click to click); probe logs touch data |
+| Keyboard (login, chat) | R3 toggles the console's inline keyboard; game input is held at rest while it is up | R3 toggles our own on-screen keyboard drawn with GL (the system IME dialog module doesn't load in a title: probe-3, `0x80020002`); typed text goes to the game as SDL text events. USB keyboards: not planned (untested) |
+| Mouse | L3 toggles a stick-driven cursor (ZR/ZL click) | same on L3 with R2/L2 click; while the cursor is on, touchpad movement also moves it (its click stays Back) |
 | File chooser | drawn over the game, shows the game folders and SD card | same, over `/download0`, `/app0` and any readable ROM route |
 | Audio | OpenAL shim on the Switch's audio out | OpenAL shim on AudioOut, 48 kHz |
 
@@ -114,7 +118,7 @@ Release zip = title folder + installer (`installer/`), icon/backgrounds, ROM ins
 | What | On the console (FTP) | Seen by the title as | Written by |
 |------|----------------------|----------------------|------------|
 | Title | `/data/homebrew/PPSA27166/` | `/app0/` (read-only) | installer |
-| ROMs | `/data/homebrew/PPSA27166/roms/` | `/app0/roms/` (read-only) | installer |
+| ROMs | `/data/homebrew/PPSA27166/roms/` | `/app0/roms/` (read-only) | installer (lists what is already there, offers to add more) |
 | Client slots, caches, config, logs | inside the title storage image | `/download0/` | the title |
 
 `/download0` is a storage image, not a folder FTP can browse, so logs go out over UDP. Probe check `fs.app0roms` confirms the ROM

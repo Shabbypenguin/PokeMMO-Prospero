@@ -259,6 +259,35 @@ def connect(host, port, user, password):
 
 
 # ---- ROMs --------------------------------------------------------------------------------------
+def remote_roms(ftp, remote_dir):
+    """ROMs already on the console as {lower-case name: (name, size or None)}; empty if the folder doesn't exist."""
+    if not exists_dir(ftp, remote_dir):
+        return {}
+    found = {}
+    try:
+        for name, facts in ftp.mlsd(remote_dir, facts=["type", "size"]):
+            if facts.get("type") == "file" and Path(name).suffix.lower() in ROM_SUFFIXES:
+                size = facts.get("size")
+                found[name.lower()] = (name, int(size) if size and size.isdigit() else None)
+        return found
+    except ftplib.error_perm:  # server without MLSD: plain names, then ask for each size
+        pass
+    for entry in ftp.nlst(remote_dir):
+        name = posixpath.basename(entry)
+        if Path(name).suffix.lower() in ROM_SUFFIXES:
+            found[name.lower()] = (name, remote_size(ftp, f"{remote_dir}/{name}"))
+    return found
+
+
+def show_remote_roms(existing, remote_dir):
+    if not existing:
+        say(f"No ROMs on the console yet ({remote_dir}/).")
+        return
+    say(f"ROMs already on the console ({remote_dir}/):")
+    for name, size in sorted(existing.values(), key=lambda item: item[0].lower()):
+        say(f"  {name}" + (f"  ({human(size)})" if size is not None else ""))
+
+
 def scan_roms(folder):
     found = []
     base_depth = len(folder.parts)
@@ -275,11 +304,16 @@ def scan_roms(folder):
 
 
 def rom_step(ftp, package, rom_folder, assume_yes, interactive):
+    remote_dir = f"{HOMEBREW}/{package.title_id}/roms"
+    say()
+    existing = remote_roms(ftp, remote_dir)
+    show_remote_roms(existing, remote_dir)
     if rom_folder is None and interactive:
         say()
         say("PokeMMO needs ROMs of the original games, dumped from cartridges you own")
         say("(.nds for Black/White, HeartGold/SoulSilver, Platinum; .gba for FireRed/LeafGreen, Emerald).")
-        if not ask_yes_no("Upload ROMs to the console now?", default=False):
+        question = "Upload more ROMs?" if existing else "Upload ROMs to the console now?"
+        if not ask_yes_no(question, default=False):
             say("Skipping ROMs. Run this installer again any time to add them.")
             return
         while True:
@@ -302,12 +336,14 @@ def rom_step(ftp, package, rom_folder, assume_yes, interactive):
         return
     say(f"Found {len(roms)} ROM(s):")
     for path in roms:
-        say(f"  {path.name}  ({human(path.stat().st_size)})")
-    if interactive and not assume_yes and not ask_yes_no(f"Upload these to {HOMEBREW}/{package.title_id}/roms/?", default=True):
+        size = path.stat().st_size
+        _, remote = existing.get(path.name.lower(), (None, None))
+        note = "already on the console" if remote == size else "replaces the console's copy" if path.name.lower() in existing else "new"
+        say(f"  {path.name}  ({human(size)}, {note})")
+    if interactive and not assume_yes and not ask_yes_no(f"Upload these to {remote_dir}/?", default=True):
         say("Skipping ROMs.")
         return
-    remote_dir = f"{HOMEBREW}/{package.title_id}/roms"
-    uploaded, skipped = sync_files(ftp, [(p, f"{remote_dir}/{p.name}", f"roms/{p.name}") for p in roms])
+    uploaded, skipped = sync_files(ftp, [(p, f"{remote_dir}/{existing.get(p.name.lower(), (p.name,))[0]}", f"roms/{p.name}") for p in roms])
     say(f"ROMs done: {uploaded} uploaded, {skipped} already there.")
 
 

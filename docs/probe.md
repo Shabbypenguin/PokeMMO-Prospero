@@ -47,7 +47,7 @@ run.
 | 1 | gl.context, gl.compat, gl.glsl110, gl.glsl120, gl.glsl130, gl.clientarr, gl.vbo-novao, gl.blend |
 | 2 | gl.immediate, tls.fs28, thread.stack, thread.getattr, vm.reserve, vm.fixed, vm.commit, vm.direct |
 | 3 | vm.directfixed, vm.vrange, vm.vrangedirect, fs.download0, fs.app0roms, fs.dataroms, fs.usb, net.dns |
-| 4 | net.tcp, net.getaddrinfo, exec.rwx, exec.mprotect, exec.jit, input.pad, input.ime |
+| 4 | net.tcp, exec.rwx, exec.mprotect, exec.jit, input.pad, input.ime |
 
 Below the tiles, one small square per controller button lights while that button is held.
 
@@ -68,8 +68,7 @@ Below the tiles, one small square per controller button lights while that button
 | fs.app0roms | Do ROMs uploaded to `/data/homebrew/<ID>/roms/` show up, readable, at `/app0/roms`? (blue = none uploaded) | ROM location changes |
 | fs.dataroms | Can a title read ROMs straight from `/data` (`/data/homebrew/PPSA27165/roms`, `/data/pokemmo-prospero/roms`)? Red = sandbox denies it | `.ffpfsc`/fpkg installs need another ROM route |
 | fs.usb | Can a title see and read USB drives (`/mnt/usb0`–`7`)? Blue = none visible | in-app "import from USB" not possible |
-| net.dns, net.tcp | Resolving and reaching PokeMMO's servers with the console resolver (`sceNetResolver`) | networking needs elevation |
-| net.getaddrinfo | Does POSIX `getaddrinfo` work in a title? It comes from a WebKit-only module and crashed probe-2 | the loader resolves names through `sceNetResolver` |
+| net.dns, net.tcp | Resolving and reaching PokeMMO's servers with the console resolver (`sceNetResolver`). POSIX `getaddrinfo` is deliberately not tested: it crashed probe-2 and probe-3 | networking needs elevation |
 | exec.rwx, exec.mprotect, exec.jit | Which executable-memory route works (libffi closures) | fall back to static trampolines |
 | input.pad | Controller input in a title; the log maps every button bit, stick axis and touchpad report | input layer design |
 | input.ime | Does the system keyboard (IME dialog) open from a title and return typed text? | text entry needs another route |

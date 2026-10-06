@@ -78,7 +78,7 @@ int scePadOpen(int user, int type, int index, const void *parameters);
 
 
 #define PROBE_PORT 18194
-#define PROBE_VERSION "probe-3"
+#define PROBE_VERSION "probe-4"
 #include "prospero_version.h"  // PROSPERO_VERSION, PROSPERO_TITLE_ID (generated at build time)
 
 // ---- result tiles -----------------------------------------------------------------------------
@@ -93,7 +93,7 @@ static Check checks[] = {
     {"gl.immediate", NOT_RUN}, {"tls.fs28", NOT_RUN},   {"thread.stack", NOT_RUN}, {"thread.getattr", NOT_RUN},
     {"vm.reserve", NOT_RUN},  {"vm.fixed", NOT_RUN},    {"vm.commit", NOT_RUN},  {"vm.direct", NOT_RUN},  {"vm.directfixed", NOT_RUN}, {"vm.vrange", NOT_RUN}, {"vm.vrangedirect", NOT_RUN}, {"fs.download0", NOT_RUN}, {"fs.app0roms", NOT_RUN},
     {"fs.dataroms", NOT_RUN}, {"fs.usb", NOT_RUN},
-    {"net.dns", NOT_RUN},     {"net.tcp", NOT_RUN},     {"net.getaddrinfo", NOT_RUN},     {"exec.rwx", NOT_RUN},   {"exec.mprotect", NOT_RUN},
+    {"net.dns", NOT_RUN},     {"net.tcp", NOT_RUN},     {"exec.rwx", NOT_RUN},   {"exec.mprotect", NOT_RUN},
     {"exec.jit", NOT_RUN},    {"input.pad", NOT_RUN},   {"input.ime", NOT_RUN},
 };
 #define CHECK_COUNT (sizeof(checks) / sizeof(*checks))
@@ -770,8 +770,8 @@ static void probeFiles(void) {
 }
 
 // ---- network --------------------------------------------------------------------------------------
-// probe-2 crashed inside getaddrinfo: in titles it comes from a WebKit-only module. Resolve names with the
-// console's own resolver instead; getaddrinfo is tried last, on its own, to record whether it ever works.
+// getaddrinfo crashes titles (probe-2, probe-3: in titles it comes from a WebKit-only module), so it is not called
+// here; names are resolved with the console's own resolver, as the loader will do.
 static struct in_addr resolved;
 static bool have_resolved;
 
@@ -804,18 +804,6 @@ static void probeNetwork(void) {
     say("net tcp connect %s:443 rc=%d errno=%d %.0f ms", address, rc_connect, rc_connect ? errno : 0, (now() - start) * 1000);
     if (fd >= 0) close(fd);
     mark("net.tcp", !rc_connect ? PASS : FAIL);
-}
-
-static void probeGetaddrinfo(void) {
-    say("BEGIN net.getaddrinfo");
-    struct addrinfo hints, *result = NULL;
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_STREAM;
-    int rc = getaddrinfo("pokemmo.com", "443", &hints, &result);
-    say("net getaddrinfo(pokemmo.com) rc=%d", rc);
-    if (result) freeaddrinfo(result);
-    mark("net.getaddrinfo", rc == 0 ? PASS : FAIL);
 }
 
 // ---- executable memory ----------------------------------------------------------------------------
@@ -1354,7 +1342,6 @@ int main(void) {
     RUN_GROUP("usb", probeUsb, "fs.usb");
     RUN_GROUP("net", probeNetwork, "net.dns", "net.tcp");
     RUN_GROUP("exec", probeExec, "exec.rwx", "exec.mprotect", "exec.jit");
-    RUN_GROUP("getaddrinfo", probeGetaddrinfo, "net.getaddrinfo");  // crashed probe-2; last so nothing else depends on it
 
     summarize();
     say("DONE with the automatic checks. Now the CONTROLLER TESTER runs: press each button, move the sticks, touch");

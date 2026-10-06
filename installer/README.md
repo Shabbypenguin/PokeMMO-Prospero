@@ -25,7 +25,8 @@ It asks for:
 1. **The title** to install, if there is more than one package next to it.
 2. **PS5 IP address, FTP port, user and password.** The address, port and user are remembered for next time; the
    password never is. ftpsrv's defaults are port 2121, user `anonymous`, no password.
-3. **Whether to upload ROMs.** Point it at the folder that holds them (you can drag the folder into the window).
+3. **Whether to upload ROMs.** It first lists the ROMs already on the console, then asks whether to upload (more).
+   Point it at the folder that holds them (you can drag the folder into the window); files already there are skipped.
    It uploads the `.nds` and `.gba` files it finds, up to two folders deep.
 
 Running it again is safe and quick: unchanged files are skipped, and the title's `eboot.bin` and `param.json` are
