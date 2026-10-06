@@ -18,12 +18,13 @@ Client revision 32920, `bin/linux/x64/PokeMMO` (re-run `make analyze` on every r
 | GLSL | legacy (no `#version`, `gl_FragColor`, `texture2D`), one `#version 130` | needs a compatibility context |
 | Code generation | only libffi closure trampolines (LWJGL callbacks) | small exec pool, or prebuilt trampolines |
 
-## Phase 1b — hardware probe (next: needs the console)
+## Phase 1b — hardware probe (mostly answered; probe-4 for files and text entry)
 
 `probe/` answers on firmware 12.40: compatibility context + legacy GLSL + blending on ps5-opengl,
 `%fs:0x28` stability, thread stack control, address-space reservations, flexible vs direct memory (and direct memory
 mapped at a fixed address inside a reservation, how GraalVM commits its heap), `/download0`,
-network, and which executable-memory route works.
+network, and which executable-memory route works. probe-2 and probe-3 settled graphics, memory, executable memory and
+network (see Hardware status). Still open: listing directories and reading ROMs, and a text-entry route.
 
 ## Phase 2 — loader core
 
@@ -34,7 +35,16 @@ Port PokeMMO-NX's loader from Horizon/ARM64 to PS5/x86-64:
   per-process guard (in memory only; the client on disk stays unmodified).
 - libc shim on FreeBSD: files (virtual root under `/download0`), threads (`pthread_getattr_np` → `pthread_attr_get_np`),
   sync, mmap with Linux flag/errno translation, sockets/epoll (→ kqueue), time, signals.
-- libffi closures: JIT shared memory if available, else a static trampoline table in the loader's own code.
+- Memory (probe-3): anonymous `mmap` can't reserve address space, so the mmap shim serves GraalVM's large
+  `PROT_NONE` reservations from `sceKernelReserveVirtualRange` (works up to 16 GiB) and commits **direct** memory at
+  fixed addresses inside them; small mappings stay anonymous. The client gets `-XX:ReservedAddressSpaceSize` below
+  16 GiB so its reservation fits.
+- Directory listing: `opendir` is refused in titles (probe-3); `getdents`/`sceKernelGetdents` are tested by probe-4.
+- Name resolution: `getaddrinfo` crashes in titles, so the shim implements it on `sceNetResolver`.
+- libffi closures: JIT shared memory and RWX pages are refused; closures come from a pool of pages written while RW
+  and flipped to RX with `mprotect` (the route probe-3 proved), like PokeMMO-NX's own RW/RX transitions.
+- Page size is 16 KiB. The client's segments are 64 KiB-aligned and its RELRO ends on a 16 KiB boundary, so they
+  map without changes.
 - Launch arguments as on the Switch: `-XX:MaxHeapSize=640m -XX:MaxNewSize=128m`.
 - Milestone: client reaches its main loop, logs over UDP.
 
@@ -52,7 +62,7 @@ works on a console (see its README and `linux_sdl*.c`):
 |------|---------------------|----------|
 | Buttons, sticks | virtual SDL3 gamepad; face buttons by printed label (A confirms, B cancels) | same, Cross confirms / Circle cancels (configurable) |
 | Gamepad name | kept short ("Switch Controller"): a long name makes the Android theme's settings pages loop and lag | same rule, e.g. "PS5 Controller" |
-| Keyboard (login, chat) | R3 toggles the console's inline keyboard; game input is held at rest while it is up | R3 opens the system IME dialog; typed text goes to the game as SDL text events; probe `input.ime` |
+| Keyboard (login, chat) | R3 toggles the console's inline keyboard; game input is held at rest while it is up | R3 opens a keyboard; typed text goes to the game as SDL text events. The system IME dialog module doesn't load in a title (probe-3, `0x80020002`), so the plan is our own on-screen keyboard drawn with GL, plus USB keyboards if `sceKeyboard` works (probe-4) |
 | Mouse | L3 toggles a stick-driven cursor (ZR/ZL click) | same on L3, plus the DualSense touchpad as a trackpad (touch to move, click to click); probe logs touch data |
 | File chooser | drawn over the game, shows the game folders and SD card | same, over `/download0`, `/app0` and any readable ROM route |
 | Audio | OpenAL shim on the Switch's audio out | OpenAL shim on AudioOut, 48 kHz |
@@ -118,7 +128,7 @@ are probed: `fs.dataroms` (read a `/data` folder directly) and `fs.usb` (in-app 
 
 1. ps5-opengl is validated on 6.02 only; SDK 1.0.1 is CI-built, not console-validated.
 2. Anonymous mmap draws on flexible memory, which ps5-opengl notes holds only a few hundred MiB. The 640 MiB Java heap will
-   likely need direct memory behind the mmap shim (probe: vm.commit vs vm.direct). The app heap caps native `malloc` at
+   needs direct memory behind the mmap shim (confirmed by probe-3; route in Phase 2). The app heap caps native `malloc` at
    128 MiB by default; native allocations (Mesa, SDL shim, client natives) must fit, so the title may need a bigger one.
 3. Title sandbox: writable storage is `/download0` only (size set in `param.json`) and it is not reachable over FTP;
    ROMs go next to the title instead (see the install layout above; to be confirmed by `fs.app0roms`).
@@ -129,6 +139,7 @@ are probed: `fs.dataroms` (read a `/data` folder directly) and `fs.usb` (in-app 
 | Firmware | Console setup | Probe result | Date |
 |----------|---------------|--------------|------|
 | 12.40 | kstuff-lite 1.07+, ShadowMountPlus 1.7beta3 | probe-2: graphics, canary, threads, direct memory, storage pass; crashed in `getaddrinfo` (see below) | 2026-10-05 |
+| 12.40 | same | probe-3: 20 pass, 7 fail, 4 info; crashed once in `getaddrinfo`, finished on relaunch (crash-resume) | 2026-10-05 |
 
 ### probe-2 findings (12.40)
 
@@ -145,3 +156,24 @@ are probed: `fs.dataroms` (read a `/data` folder directly) and `fs.usb` (in-app 
   ShadowMountPlus's sandbox mounts are not applied; `/app0/roms` returned EPERM (probe-3 logs the sandbox view).
 - **Network:** UDP works (the log arrived). `getaddrinfo` crashed the title three times: in titles it comes from
   `libScePosixForWebKit`. probe-3 resolves with the console's `sceNetResolver`; the loader will do the same.
+
+### probe-3 findings (12.40)
+
+- **Heap route found.** `sceKernelReserveVirtualRange` reserves 1, 4 and 16 GiB (32 GiB: `0x8002000c`). Direct
+  memory maps at fixed addresses inside the range (chunks at +0, +1 and +3 GiB), anonymous `MAP_FIXED` works inside
+  it, `mprotect` to NONE and back keeps the contents, and `munmap` releases it. A plain `mmap` reservation still
+  fails, so `vm.reserve`, `vm.fixed` and `vm.directfixed` stay red; they are superseded by `vm.vrange*`.
+- **Executable memory:** RWX pages map but fault when executed, JIT shared memory is refused (`0x80020001`), and
+  RW→RX `mprotect` works. libffi closures use the `mprotect` route.
+- **Network:** `sceNetResolver` resolves pokemmo.com and TCP to port 443 connects in 21 ms. `getaddrinfo` crashed
+  the title again (expected; the check stays in so a firmware change that fixes it shows up).
+- **Files:** `opendir` fails with EPERM on every path, even `/download0`, which the title can write to, while
+  `stat("/app0/roms")` succeeds (`040777`). The ROM uploaded with the installer was therefore not seen. The libc
+  directory call is what's blocked, not access; probe-4 lists with `getdents` and opens ROMs by name.
+  `/data`, `/mnt` and `/user` don't exist in the title's view (ENOENT), so ShadowMountPlus's sandbox mounts were not
+  applied, and the USB drive was not visible.
+- **Input:** every pad button, both sticks and the touchpad report (see the button table in `probe/probe.c`). The
+  IME dialog module fails to load (`0x80020002`) at both paths tried.
+- **ShadowMountPlus keeps a copy.** Reinstalling over FTP left the old probe running from SMP's virtual drive until
+  the title was uninstalled from the home screen and SMP re-added it. Documented in the build environment's
+  console setup.

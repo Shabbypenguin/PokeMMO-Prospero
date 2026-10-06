@@ -33,6 +33,10 @@ bottom of the screen and is logged), move both sticks, touch and click the touch
 the system keyboard and type a few letters. Close the title with the PS button when done. For the USB check, plug a
 USB drive in before launching (ROMs at its top level are read too).
 
+**Reinstalling:** ShadowMountPlus runs the title from its own copy, so after uploading a new probe, uninstall the
+title from the home screen and wait for ShadowMountPlus to add it again. Check the first log line
+(`PokeMMO-Prospero probe-N (build ...)`) to confirm the new build is the one running.
+
 ## Screen
 
 One tile per check, eight per row, left to right, top to bottom. Green pass, red fail, blue informational, grey not
