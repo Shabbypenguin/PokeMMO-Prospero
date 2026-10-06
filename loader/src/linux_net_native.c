@@ -18,6 +18,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -106,7 +107,10 @@ int linuxNetNativeClose(int handle) {
     trace("net.close handle=%d result=%d", handle, result);
     return result;
 }
+// loader-5: on the PS5, fcntl(F_SETFL) on a socket is refused (EACCES); the FIONBIO ioctl is the socket's own switch.
 int linuxNetNativeSetNonblocking(int handle, bool enable, int *error) {
+    int on = enable ? 1 : 0;
+    if (!ioctl(handle, FIONBIO, &on)) return 0;
     int flags = fcntl(handle, F_GETFL, 0);
     if (flags < 0) return failure("fcntl_get", error);
     flags = enable ? (flags | O_NONBLOCK) : (flags & ~O_NONBLOCK);
