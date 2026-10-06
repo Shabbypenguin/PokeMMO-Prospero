@@ -208,7 +208,12 @@ def remove_quietly(ftp, path):
 
 
 def upload(ftp, local, remote, label):
-    total = local.stat().st_size
+    with local.open("rb") as source:
+        upload_stream(ftp, source, local.stat().st_size, remote, label)
+
+
+def upload_stream(ftp, source, total, remote, label):
+    """Upload a readable binary stream under a hidden temporary name, then rename it into place."""
     directory, name = posixpath.split(remote)
     temporary = posixpath.join(directory, f".{name}.upload")
     ensure_dir(ftp, directory)
@@ -228,8 +233,7 @@ def upload(ftp, local, remote, label):
             sys.stdout.write(f"\r  {label}  {percent:3d}%  {human(sent)} / {human(total)}  {human(rate)}/s   ")
             sys.stdout.flush()
 
-    with local.open("rb") as source:
-        ftp.storbinary(f"STOR {temporary}", source, blocksize=BLOCK, callback=progress)
+    ftp.storbinary(f"STOR {temporary}", source, blocksize=BLOCK, callback=progress)
     if total == 0:
         progress(b"")
     remove_quietly(ftp, remote)
@@ -347,6 +351,64 @@ def rom_step(ftp, package, rom_folder, assume_yes, interactive):
     say(f"ROMs done: {uploaded} uploaded, {skipped} already there.")
 
 
+def write_rom_index(ftp, remote_dir):
+    """roms/.prospero-index: the ROM names, one per line. A PS5 title cannot list folders with the C library, so the loader
+    falls back to this file when its own listing is refused."""
+    names = sorted(name for name, _ in remote_roms(ftp, remote_dir).values())
+    if not names:
+        return
+    data = ("\n".join(names) + "\n").encode()
+    import io
+    upload_stream(ftp, io.BytesIO(data), len(data), f"{remote_dir}/.prospero-index", "roms/.prospero-index")
+
+
+# ---- developer builds: the client from a PokeMMO-Client.zip -------------------------------------------
+# Release builds download the client on the console. A developer build (milestone 1 of the loader) has no downloader yet,
+# so the Linux part of the official zip is uploaded into the title folder (client/), with a manifest the loader copies from.
+# Never put the client in a release package: it is PokeMMO's, and the project does not redistribute it.
+def client_entries(archive):
+    keep = []
+    for info in archive.infolist():
+        name = info.filename
+        if info.is_dir() or ".." in name.split("/"):
+            continue
+        if name.startswith("bin/") and not name.startswith("bin/linux/x64/"):
+            continue  # Windows, macOS and ARM binaries
+        if name.lower().endswith((".exe", ".sh", ".bat", ".command")) or name.startswith(("log/", "roms/")):
+            continue
+        keep.append(info)
+    return keep
+
+
+def client_step(ftp, package, client_zip):
+    import io
+    with zipfile.ZipFile(client_zip) as archive:
+        entries = client_entries(archive)
+        if not any(e.filename == "bin/linux/x64/PokeMMO" for e in entries) or not any(e.filename == "revision.txt" for e in entries):
+            raise ValueError(f"{client_zip.name} is not a PokeMMO client zip (no bin/linux/x64/PokeMMO or revision.txt)")
+        revision = archive.read("revision.txt").decode(errors="replace").strip()
+        total = sum(e.file_size for e in entries)
+        remote_root = f"{HOMEBREW}/{package.title_id}/client"
+        say()
+        say(f"Developer client: revision {revision}, {len(entries)} files, {human(total)} -> {remote_root}/")
+        uploaded = skipped = 0
+        for entry in entries:
+            if entry.filename == "revision.txt":
+                continue  # last: the loader copies the client again only when the revision changes
+            remote = f"{remote_root}/{entry.filename}"
+            if remote_size(ftp, remote) == entry.file_size:
+                skipped += 1
+                continue
+            with archive.open(entry) as source:
+                upload_stream(ftp, source, entry.file_size, remote, f"client/{entry.filename}")
+            uploaded += 1
+        manifest = "".join(f"{e.file_size} {e.filename}\n" for e in entries if e.filename != "revision.txt").encode()
+        upload_stream(ftp, io.BytesIO(manifest), len(manifest), f"{remote_root}/manifest.txt", "client/manifest.txt")
+        data = archive.read("revision.txt")
+        upload_stream(ftp, io.BytesIO(data), len(data), f"{remote_root}/revision.txt", "client/revision.txt")
+        say(f"Client done: {uploaded} uploaded, {skipped} unchanged.")
+
+
 # ---- main --------------------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -359,6 +421,8 @@ def main():
     rom_group.add_argument("--roms", type=Path, metavar="FOLDER", help="upload ROMs from this folder")
     rom_group.add_argument("--no-roms", action="store_true", help="don't ask about ROMs")
     parser.add_argument("--yes", action="store_true", help="no questions: use arguments and saved settings")
+    parser.add_argument("--client", type=Path, metavar="ZIP",
+                        help="developer builds only: upload the Linux part of this PokeMMO-Client.zip into the title folder")
     args = parser.parse_args()
     interactive = not args.yes and sys.stdin.isatty()
 
@@ -432,9 +496,14 @@ def main():
                 raise RuntimeError("upload finished but eboot.bin is not on the console")
             say(f"Title done: {uploaded} uploaded, {skipped} unchanged.")
 
-            # 3. ROMs
+            # 3. Developer builds: the client
+            if args.client:
+                client_step(ftp, package, clean_path(str(args.client)))
+
+            # 4. ROMs
             if not args.no_roms:
                 rom_step(ftp, package, clean_path(str(args.roms)) if args.roms else None, args.yes, interactive)
+            write_rom_index(ftp, f"{remote_root}/roms")
 
     say()
     say(f"All done. Launch \"{package.name}\" from the PS5 home screen")

@@ -54,4 +54,6 @@ python3 pokemmo_prospero_install.py --yes --package pokemmo-prospero-probe-PPSA2
     --host 192.168.1.50 --port 2121 --user anonymous --password "" --roms ~/roms
 ```
 
+`--client PokeMMO-Client.zip` (developer builds only, such as the loader's milestone builds) uploads the Linux
+part of the official client into the title folder (`client/`); release builds download the client on the console.
 `--no-roms` skips the ROM step. `python3 pokemmo_prospero_install.py --help` lists every option.

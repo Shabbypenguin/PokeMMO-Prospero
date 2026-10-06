@@ -27,7 +27,12 @@ network, and which executable-memory route works. probe-2 and probe-3 settled gr
 network (see Hardware status). Directory listing and audio output are verified by the loader's first builds
 instead of another probe run (see Phase 2).
 
-## Phase 2 — loader core
+## Phase 2 — loader core (milestone 1 built; see [loader.md](loader.md))
+
+Status: on a Linux PC the ported loader runs the unmodified client through GraalVM start-up, logging,
+configuration, LWJGL, SDL3 and libgdx, up to the graphics setup (no display yet); only `fork` and
+`posix_spawnattr_init` are refused. The PS5 build (`make loader`, title PPSA27166) adds the start-up
+self-checks below and waits for its first console run.
 
 Port PokeMMO-NX's loader from Horizon/ARM64 to PS5/x86-64:
 

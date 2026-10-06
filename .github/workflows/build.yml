@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Builds the probe title inside the image published by the pokemmo-ps5-buildenv repository
+# Builds the probe and loader titles inside the image published by the pokemmo-ps5-buildenv repository
 # (same owner, see that repo's image workflow). The PokeMMO client is never downloaded here.
 name: build
 
@@ -30,15 +30,16 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
           docker pull "$image"
 
-      - name: Build probe title and release zip
-        run: docker run --rm -v "$PWD:/work" -w /work "$IMAGE" make package-probe
+      - name: Build probe and loader titles and their zips
+        run: docker run --rm -v "$PWD:/work" -w /work "$IMAGE" bash -c "make package-probe && make package-loader"
 
       - name: Check title contents
         run: |
           set -euo pipefail
-          title=build/titles/PPSA27165/dist/PPSA27165
-          for file in eboot.bin sce_module/libc.prx sce_sys/param.json; do
-            test -s "$title/$file"
+          for title in build/titles/PPSA27165/dist/PPSA27165 build/titles/PPSA27166/dist/PPSA27166; do
+            for file in eboot.bin sce_module/libc.prx sce_sys/param.json; do
+              test -s "$title/$file"
+            done
           done
 
       - uses: actions/upload-artifact@v4
@@ -46,3 +47,18 @@ jobs:
           name: pokemmo-prospero-probe
           path: dist/pokemmo-prospero-probe-installer.zip
           if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pokemmo-prospero-loader
+          path: dist/pokemmo-prospero-loader-installer.zip
+          if-no-files-found: error
+
+  # The same loader on Linux, run against nothing but itself: catches build breaks of the shared adapters (the client is never
+  # downloaded in CI, so the run itself happens on a developer's PC with `make host-run`).
+  host-loader:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the host loader
+        run: sudo apt-get install -y --no-install-recommends clang zlib1g-dev && make host-loader

@@ -17,7 +17,7 @@ What this repository takes from it today:
 
 | Taken | Where it lives here | Form |
 |-------|---------------------|------|
-| The overall design (ELF loader + libc shim + virtual libraries) | [docs/plan.md](docs/plan.md) | design, no code |
+| The overall design (ELF loader + libc shim + virtual libraries) | [docs/plan.md](docs/plan.md), [docs/loader.md](docs/loader.md) | design and code (below) |
 | Which runtime libraries the client opens and must be provided virtually | [docs/plan.md](docs/plan.md), `tools/client-baseline.txt` | knowledge, re-derived from the client with `tools/analyze_client.py` |
 | The client's OpenGL context request (desktop GL 2.1, no profile mask) | `probe/probe.c` (`glOpen`) | behavior reproduced, code written from scratch |
 | The libffi closure interception idea (LWJGL callbacks need executable trampolines) | [docs/plan.md](docs/plan.md), `probe/probe.c` (exec checks) | design, no code |
@@ -25,10 +25,18 @@ What this repository takes from it today:
 | JVM launch options `-XX:MaxHeapSize=640m -XX:MaxNewSize=128m` | [docs/plan.md](docs/plan.md) (Phase 2) | values |
 | Input design: controller as an SDL3 gamepad with face buttons by printed label, a short gamepad name (long ones make the client's Android theme lag), R3 for the keyboard, L3 for a stick cursor | [docs/plan.md](docs/plan.md) (Phase 4) | design, no code |
 
-What will be taken in Phase 2 (planned, not yet in this repository): the portable parts of PokeMMO-NX's loader — the
-ELF loader (`elf_*.c`), the Linux ABI/libc layer (`linux_abi.c`, `linux_stdio.c`, `linux_files.c`, …) and the SDL3,
-OpenAL and GTK shims — adapted from Horizon/ARM64 to the PS5/x86-64. Every adapted file will keep PokeMMO-NX's
-copyright notice and say so in its header, as the MIT license requires.
+Since milestone 1 of the loader, PokeMMO-NX's code is in this repository too (`loader/`). Each of these files
+keeps PokeMMO-NX's copyright notice in its header and lists what changed (details in [docs/loader.md](docs/loader.md)):
+
+| File(s) here | From PokeMMO-NX | Changes |
+|--------------|-----------------|---------|
+| `loader/src/elf_layout.c`, `elf_versions.c`, `elf_image.c` and headers | same names | x86-64 relocations, in-place staging |
+| `loader/src/elf_executable.c` | `elf_executable.c` | mapping through the platform layer |
+| `loader/src/linux_abi.c`, `linux_runtime.c`, `linux_files.c`, `linux_stdio.c`, `linux_format.c`, `linux_libc_extra.c`, `linux_process.c` | same names | x86-64 layouts and numbers, platform calls, mounts, `getdents` listing |
+| `loader/src/linux_net.c`, `linux_net_translate.c`, `linux_net_native.c`, `linux_vfd.c`, `linux_zlib.c` | same names | BSD sockets of the platform, packed `epoll_event` |
+| `loader/src/linux_dl.c`, `linux_trap.c`, `linux_virtual_stubs.c`, `linux_jit.c`, `linux_threads.c`, `linux_vm.c`, `diagnostics.c`, `game.c` | same names | see each header |
+| `loader/src/linux_stubs_x86_64.c` | `linux_trap_stubs.s`, `linux_virtual_stub_table.s` | rewritten for x86-64 |
+| `loader/src/linux_sync.c`, `linux_semaphore.c`, `linux_tls.c` | interfaces only | implementations written for this port |
 
 ## PS5 platform projects
 

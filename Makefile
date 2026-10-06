@@ -4,6 +4,7 @@
 SHELL := bash
 
 PROBE_TITLE_ID ?= PPSA27165
+LOADER_TITLE_ID ?= PPSA27166
 # Optional: your PC's LAN address; the probe also sends its log there (it always broadcasts too).
 PROBE_LOG_HOST ?=
 CLIENT_ZIP ?= private/PokeMMO-Client.zip
@@ -11,12 +12,15 @@ CLIENT_ZIP ?= private/PokeMMO-Client.zip
 PS5_HOST ?=
 FTP_PORT ?= 2121
 
-.PHONY: help env-check probe package-probe deploy-probe fetch-client analyze clean
+.PHONY: help env-check probe package-probe deploy-probe loader package-loader host-loader host-run fetch-client analyze clean
 
 help:
 	@echo "make probe          build the hardware probe title  (PROBE_LOG_HOST=192.168.x.y optional)"
 	@echo "make package-probe  probe + installer in one zip for players  (dist/pokemmo-prospero-probe-installer.zip)"
 	@echo "make deploy-probe   upload it to /data/homebrew over FTP (PS5_HOST=..., FTP_PORT=$(FTP_PORT))"
+	@echo "make loader         build the loader title (milestone 1: self-checks + the client up to its graphics setup)"
+	@echo "make package-loader loader + installer in one zip (dist/pokemmo-prospero-loader-installer.zip)"
+	@echo "make host-loader    build the same loader for this Linux PC (build/host/prospero-host); host-run runs the client in it"
 	@echo "make fetch-client   download the PokeMMO client into $(CLIENT_ZIP) (never committed)"
 	@echo "make analyze        check a client release against what the loader supports"
 	@echo "make clean          remove build outputs"
@@ -45,6 +49,32 @@ deploy-probe: env-check
 	@[[ -n "$(PS5_HOST)" ]] || { echo "set PS5_HOST to the console's IP"; exit 2; }
 	@[[ -d build/titles/$(PROBE_TITLE_ID) ]] || { echo "run 'make probe' first"; exit 2; }
 	$(MAKE) -C build/titles/$(PROBE_TITLE_ID) --no-print-directory deploy PS5_HOST=$(PS5_HOST) FTP_PORT=$(FTP_PORT)
+
+loader: env-check
+	@rm -rf build/loader-assets && mkdir -p build/loader-assets
+	@if [[ -n "$(PROBE_LOG_HOST)" ]]; then echo "$(PROBE_LOG_HOST)" > build/loader-assets/loghost.txt; \
+	 else echo "(no PROBE_LOG_HOST: UDP broadcast only)" > build/loader-assets/README.txt; fi
+	bash scripts/build-title.sh --title-id $(LOADER_TITLE_ID) --name "PokeMMO Prospero (dev)" \
+		--sources loader/src --sources loader/platform/ps5 --include loader/include --zlib \
+		--assets build/loader-assets --content-suffix LOADER --download-mib 4096
+	@mkdir -p dist && cp build/titles/$(LOADER_TITLE_ID)/dist/$(LOADER_TITLE_ID).zip dist/pokemmo-prospero-loader-$(LOADER_TITLE_ID).zip
+
+package-loader: loader
+	@rm -rf build/package && mkdir -p build/package/pokemmo-prospero-loader
+	cp installer/pokemmo_prospero_install.py installer/install.bat installer/install.command installer/install.sh \
+		installer/README.md LICENSE CREDITS.md dist/pokemmo-prospero-loader-$(LOADER_TITLE_ID).zip build/package/pokemmo-prospero-loader/
+	cd build/package && rm -f ../../dist/pokemmo-prospero-loader-installer.zip && zip -q -X -r ../../dist/pokemmo-prospero-loader-installer.zip pokemmo-prospero-loader
+	@echo "Release zip: dist/pokemmo-prospero-loader-installer.zip (developer build: install with --client PokeMMO-Client.zip)"
+
+# The loader on this PC (no console needed): same adapters, platform/host. Needs a C compiler and zlib headers.
+host-loader:
+	$(MAKE) -f loader/Makefile.host --no-print-directory
+
+host-run: host-loader
+	@[[ -f "$(CLIENT_ZIP)" ]] || { echo "no client at $(CLIENT_ZIP): run 'make fetch-client' first"; exit 2; }
+	rm -rf build/host/client build/host/root && mkdir -p build/host/client
+	unzip -q "$(CLIENT_ZIP)" -d build/host/client -x 'bin/win*' 'bin/mac*' 'bin/linux/arm64/*' '*.exe'
+	./build/host/prospero-host --client build/host/client --root build/host/root --timeout 60
 
 fetch-client:
 	python3 tools/fetch_client.py --output "$(CLIENT_ZIP)"

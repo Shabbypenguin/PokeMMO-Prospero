@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Builds the loader for a Linux PC (platform/host): `make -f loader/Makefile.host` from the repository root.
+CC ?= clang
+BUILD := build/host
+SOURCES := $(wildcard loader/src/*.c) $(wildcard loader/platform/host/*.c)
+OBJECTS := $(patsubst %.c,$(BUILD)/%.o,$(SOURCES))
+CFLAGS := -std=gnu11 -O1 -g -fno-omit-frame-pointer -Wall -Wextra -Wno-unused-parameter -Iloader/include -D_GNU_SOURCE -pthread
+LDLIBS := -lz -lm -pthread
+
+$(BUILD)/prospero-host: $(OBJECTS)
+	$(CC) -o $@ $^ $(LDLIBS)
+$(BUILD)/%.o: %.c $(wildcard loader/include/*.h)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
+.PHONY: clean
+clean:
+	rm -rf $(BUILD)

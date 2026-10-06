@@ -2,11 +2,11 @@
 
 An unofficial effort to run the official, unmodified PokeMMO Linux client natively on a jailbroken PS5.
 
-> **Status: early. PokeMMO does not run on the PS5 yet.** What exists today is the client analysis, the title build
-> scripts and a hardware probe. The loader itself (Phase 2) has not been written. Progress and open questions are in
-> [docs/plan.md](docs/plan.md).
+> **Status: early. PokeMMO does not run on the PS5 yet.** The loader (ported from PokeMMO-NX) runs the client on a
+> Linux PC up to its graphics setup; its first PS5 build (milestone 1) is waiting for a console run. Graphics, input
+> and audio for the client come next. Progress and open questions: [docs/plan.md](docs/plan.md), [docs/loader.md](docs/loader.md).
 
-## How it works (planned)
+## How it works
 
 This is a port of the approach [PokeMMO-NX](https://github.com/Petit-Prince-dev/PokeMMO-NX) by Petit_Prince uses on
 the Nintendo Switch. A small C loader maps PokeMMO's own Linux executable (a GraalVM native image) and supplies the
