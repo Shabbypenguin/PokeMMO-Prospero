@@ -42,13 +42,18 @@ while (($#)); do
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
 done
-[[ $title_id =~ ^PPSA[0-9]{5}$ ]] || { echo "--title-id must be PPSA + 5 digits" >&2; exit 2; }
+# Retail PS5 titles are PPSA + 5 digits; any other 9 characters (A-Z, 0-9) is an experiment (the boilerplate's own checks
+# are relaxed to match, below), e.g. POKEMMOP5.
+[[ $title_id =~ ^[A-Z0-9]{9}$ ]] || { echo "--title-id must be 9 characters A-Z/0-9 (retail form: PPSA + 5 digits)" >&2; exit 2; }
+retail_id=0
+[[ $title_id =~ ^PPSA[0-9]{5}$ ]] && retail_id=1
 [[ -n $name && ${#sources[@]} -gt 0 ]] || { echo "--name and at least one --sources directory are required" >&2; exit 2; }
 for directory in "${sources[@]}" "${includes[@]}"; do
     [[ -d $root/$directory ]] || { echo "missing directory: $directory" >&2; exit 2; }
 done
 [[ $heap_mib =~ ^[0-9]+$ && $download_mib =~ ^[0-9]+$ ]] || { echo "sizes must be integers" >&2; exit 2; }
 suffix=${suffix:-${title_id:4}}
+suffix=${suffix//[^A-Z0-9]/}
 [[ $suffix =~ ^[A-Z0-9]{1,16}$ ]] || { echo "--content-suffix must be 1-16 of A-Z0-9" >&2; exit 2; }
 
 (cd "$prefix" && sha256sum --check --strict --quiet manifest.sha256)
@@ -127,7 +132,7 @@ from pathlib import Path
 source, target, title_id, name, suffix, download = sys.argv[1:]
 param = json.loads(Path(source).read_text())
 param["titleId"] = title_id
-param["conceptId"] = title_id[4:]
+param["conceptId"] = title_id[4:] if title_id[4:].isdigit() else "99999"  # a number either way
 param["contentId"] = f"UP9000-{title_id}_00-" + ("PKMMO" + suffix).ljust(16, "0")[:16]
 param["localizedParameters"]["en-US"]["titleName"] = name
 param["downloadDataSize"] = int(download)
@@ -167,6 +172,10 @@ for stub in agc_link_stub:libSceAgc agc_driver_link_stub:libSceAgcDriver; do
         "$app/build/native-imports/$source.o"
 done
 
+if ((!retail_id)); then  # the boilerplate only knows PPSA ids: let it pass this one
+    sed -i 's/r"PPSA\\d{5}"/r"[A-Z0-9]{9}"/; s/-PPSA\\d{5}_00-/-[A-Z0-9]{9}_00-/' "$app/tools/build.sh"
+    grep -q '\[A-Z0-9\]{9}_00' "$app/tools/build.sh" || { echo "could not relax the boilerplate's title id check" >&2; exit 2; }
+fi
 make -C "$app" --no-print-directory app
 
 dist="$app/dist/$title_id"
