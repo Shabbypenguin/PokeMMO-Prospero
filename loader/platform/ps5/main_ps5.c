@@ -41,7 +41,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define LOADER_MILESTONE "loader-21"
+#define LOADER_MILESTONE "loader-22"
 // ps5-opengl's app heap (malloc of the loader and of everything the client allocates with malloc): from direct memory.
 const size_t ps5_opengl_heap_size = 768u << 20;
 
@@ -160,7 +160,7 @@ static unsigned listFolder(const char *step, const char *path, char names[][256]
 
 // ---- ROMs (loader-16): what is in the ROM folder against what PokeMMO uses (roms.c) ---------------------------------------------
 // Without Black or White the game cannot be played: the ROM screen stays up before the game starts (Cross checks the folder
-// again after an upload, Circle starts anyway). Missing optional games are a note; holding Square shows the screen.
+// again after an upload; PokeMMO cannot get past its start without it, so there is no way round). Missing optional games are a note; holding Square shows the screen.
 #define ROM_FOLDER "/app0/roms"
 static _Atomic unsigned rom_count;  // games found
 static RomScan rom_scan;
@@ -178,7 +178,7 @@ static void startUploads(void) {
     uploadServersStart(ROM_FOLDER, ROM_FTP_PATH, existing_ftp_port == 0, romsChanged);
 }
 static _Atomic bool rom_blocking;
-static _Atomic int rom_choice;  // 0 none, 1 check again, 2 start anyway
+static _Atomic int rom_choice;  // 0 none, 1 check again (loader-22: PokeMMO cannot get past its start without Black/White)
 static void scanRoms(void) {
     mark("fs.list.roms", RUNNING);
     RomScan scan;
@@ -198,10 +198,6 @@ static void waitForRequiredRom(void) {
         atomic_store(&rom_choice, 0);
         atomic_store(&rom_blocking, true);
         while (!atomic_load(&rom_choice)) sceKernelUsleep(20000);
-        if (atomic_load(&rom_choice) == 2) {
-            say("roms: starting without Black/White (the player chose to)");
-            break;
-        }
         scanRoms();
     }
     atomic_store(&rom_blocking, false);
@@ -868,7 +864,6 @@ static void drawScreen(unsigned frame) {
     bool blocking = atomic_load(&rom_blocking);
     if (blocking && !atomic_load(&rom_choice)) {
         if (pressed & PLATFORM_PAD_CROSS) atomic_store(&rom_choice, 1);
-        if (pressed & PLATFORM_PAD_CIRCLE) atomic_store(&rom_choice, 2);
     }
     if (!view.details && (blocking || (read && (pad.buttons & PLATFORM_PAD_SQUARE)))) {
         pthread_mutex_lock(&rom_lock);

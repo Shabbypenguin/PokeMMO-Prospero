@@ -30,7 +30,7 @@ typedef struct {
 } LoadingView;
 void loadingScreenDraw(const LoadingView *view);
 // The ROM screen: what is in the ROM folder against what PokeMMO uses, and where to upload. `blocking`: the game cannot start
-// as things are (Cross checks again, Circle starts anyway); otherwise it is open while Square is held.
+// as things are (Cross checks again); otherwise it is open while Square is held.
 // Where to upload: the web page (when running), an FTP server (the console's own payload, or the title's), the folder.
 typedef struct {
     const char *address;  // the console's IP

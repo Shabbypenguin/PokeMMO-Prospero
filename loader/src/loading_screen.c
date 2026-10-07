@@ -194,7 +194,7 @@ void romScreenDraw(const RomScan *scan, const RomUploadInfo *upload, bool blocki
         overlayTextFit(left + 30, row - 4, upload->receiving, 26, width - 60 - (upload->web ? 260 : 0), GREEN);
     overlayText(left + 30, box_y + 224, "Or run the installer on your PC and choose your ROM folder.", 24, DIM);
     if (blocking)
-        overlayTextCentered(OVERLAY_WIDTH / 2, 995, "\x01 Check again          \x02 Start anyway", 34, TEXT);
+        overlayTextCentered(OVERLAY_WIDTH / 2, 995, "\x01 Check again", 34, TEXT);
     else
         overlayTextCentered(OVERLAY_WIDTH / 2, 995, "Release \x03 to go back", 30, DIM);
 }
