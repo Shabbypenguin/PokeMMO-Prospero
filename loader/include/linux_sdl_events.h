@@ -39,6 +39,11 @@ typedef struct {
     bool pointer;      // the controller's cursor is on (linux_sdl_cursor.c): a second mouse, which the game sees besides the touch screen
     float pointer_x, pointer_y;
     bool pointer_left, pointer_right;
+    unsigned pad_touches;  // PS5: fingers on the controller's touchpad (a trackpad, linux_sdl_cursor.c; not a touch screen)
+    struct {
+        float x, y;        // touchpad units, about 0..1919 x 0..1079
+        uint8_t id;
+    } pad_touch[2];
     uint32_t buttons;  // bit i = SDL_GamepadButton i
     int16_t axes[LINUX_SDL_GAMEPAD_AXES];
     uint64_t timestamp_ns;

@@ -599,6 +599,7 @@ bool platformPadRead(PlatformPad *pad) {
     pad->lx = data.lx, pad->ly = data.ly, pad->rx = data.rx, pad->ry = data.ry, pad->l2 = data.l2, pad->r2 = data.r2;
     pad->touches = data.touch_count > 2 ? 2 : data.touch_count;
     if (pad->touches) pad->touch_x = data.touch[0].x, pad->touch_y = data.touch[0].y;
+    for (unsigned i = 0; i < pad->touches; ++i) pad->touch[i].x = data.touch[i].x, pad->touch[i].y = data.touch[i].y, pad->touch[i].id = data.touch[i].id;
     return true;
 }
 

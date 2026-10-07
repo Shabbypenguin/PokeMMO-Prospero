@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT AND GPL-3.0-or-later
 // Adapted from PokeMMO-NX (https://github.com/Petit-Prince-dev/PokeMMO-NX, source/linux_sdl_input.c)
 // Copyright (c) Petit_Prince, MIT license (LICENSES/PokeMMO-NX-MIT.txt). PS5 changes: PokeMMO-Prospero contributors.
-// Changes: the PS5 controller (through the platform layer) instead of the Switch's; no touch screen. The Switch's inline keyboard
+// Changes: the PS5 controller (through the platform layer) instead of the Switch's; no touch screen (the touchpad's fingers go to
+// the trackpad, linux_sdl_cursor.c). The Switch's inline keyboard
 // applet has no PS5 counterpart (the system keyboard module loads but its functions cannot be looked up): the keyboard is the
 // loader's own (osk.c).
 #include "linux_sdl_input.h"
@@ -46,6 +47,9 @@ bool linuxSdlInputSample(LinuxInputSnapshot *snapshot) {
     snapshot->axes[3] = stick(pad.ry);
     snapshot->axes[4] = trigger(pad.l2);
     snapshot->axes[5] = trigger(pad.r2);
+    snapshot->pad_touches = pad.touches;
+    for (unsigned i = 0; i < pad.touches; ++i)
+        snapshot->pad_touch[i].x = pad.touch[i].x, snapshot->pad_touch[i].y = pad.touch[i].y, snapshot->pad_touch[i].id = pad.touch[i].id;
     return true;
 }
 

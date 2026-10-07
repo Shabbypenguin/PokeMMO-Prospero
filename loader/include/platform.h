@@ -87,6 +87,10 @@ typedef struct {
     uint8_t lx, ly, rx, ry, l2, r2;
     unsigned touches;
     uint16_t touch_x, touch_y;  // first touch, about 0..1919 x 0..1079
+    struct {
+        uint16_t x, y;
+        uint8_t id;             // the same while the finger stays on the touchpad
+    } touch[2];                 // every touch (loader-27: the touchpad is a trackpad)
 } PlatformPad;
 bool platformPadRead(PlatformPad *pad);  // false when no controller can be read
 

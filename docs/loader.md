@@ -73,6 +73,11 @@ their questions and no longer run.
 
 | Input | Does |
 |-------|------|
+| Touchpad: slide a finger | Moves a mouse cursor, like a laptop trackpad (faster swipes go further); it hides 4 s after the last touch (loader-27) |
+| Touchpad: tap / two-finger tap | Left click / right click |
+| Touchpad: tap, then touch again and slide | Drag (the left button is held until the finger lifts) |
+| Touchpad: press down | Still the game's button (the bag); a press is never a click |
+| L3 | Stick cursor on/off: the left stick moves the cursor, R2 / L2 click left / right, the game sees an idle controller |
 | R3 | On-screen keyboard on/off (select the text field first) |
 | Keyboard up: d-pad / left stick, Cross | Move, type the highlighted key |
 | Keyboard up: Square, Triangle | Delete, space (held: repeat) |
