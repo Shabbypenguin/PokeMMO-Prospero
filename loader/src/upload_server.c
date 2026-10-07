@@ -28,7 +28,7 @@
 
 #define BANNER "220 PokeMMO-Prospero ROM upload"
 static UploadStatus status;
-static char folder[256], ftp_path[256];
+static char folder[256], ftp_path[256], log_file[256], settings_file[256];
 static void (*on_change)(void);
 static _Atomic bool stopping;
 static int listeners[2] = {-1, -1};
@@ -36,6 +36,10 @@ static pthread_t acceptors[2];
 static _Atomic int connections;
 
 UploadStatus *uploadStatus(void) { return &status; }
+void uploadSetDownloads(const char *log_path, const char *settings_path) {
+    snprintf(log_file, sizeof(log_file), "%s", log_path ? log_path : "");
+    snprintf(settings_file, sizeof(settings_file), "%s", settings_path ? settings_path : "");
+}
 
 // ---- small socket helpers ------------------------------------------------------------------------------------------------------
 static bool sendAll(int fd, const void *data, size_t size) {
@@ -191,6 +195,8 @@ static void sendPage(int fd) {
                   "<div class=box><label class=btn>Choose ROM files<input id=f type=file multiple accept='.nds,.gba' hidden></label>"
                   "<progress id=p value=0 max=1 hidden></progress><div id=log></div></div>"
                   "<p style='color:#8a9bbf'>The files go to the PS5 title's roms folder. When you are done, press Cross on the console.</p>"
+                  "<p style='color:#8a9bbf'>For help with problems: <a style='color:#5aa0e8' href=/log>download the log</a> &middot; "
+                  "<a style='color:#5aa0e8' href=/settings>download the game's settings</a></p>"
                   "<script>const f=document.getElementById('f'),p=document.getElementById('p'),log=document.getElementById('log');"
                   "f.onchange=async()=>{for(const file of f.files){p.hidden=false;log.textContent='Sending '+file.name+'...';"
                   "await new Promise((ok,bad)=>{const x=new XMLHttpRequest();x.open('PUT','/upload/'+encodeURIComponent(file.name));"
@@ -201,6 +207,31 @@ static void sendPage(int fd) {
     snprintf(header, sizeof(header), "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: %d\r\nConnection: close\r\n\r\n", n);
     if (sendText(fd, header)) sendAll(fd, page, (size_t)n);
     free(page);
+}
+// The log or the settings file, as an attachment.
+static void sendDownload(int fd, bool log) {
+    const char *path = log ? log_file : settings_file;
+    int in = path[0] ? open(path, O_RDONLY) : -1;
+    struct stat info;
+    if (in < 0 || fstat(in, &info)) {
+        if (in >= 0) close(in);
+        sendText(fd, "HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\nConnection: close\r\n\r\nnot found");
+        return;
+    }
+    char header[256];
+    snprintf(header, sizeof(header),
+             "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Disposition: attachment; filename=\"%s\"\r\n"
+             "Content-Length: %lld\r\nConnection: close\r\n\r\n",
+             log ? "prospero.log" : "main.properties", (long long)info.st_size);
+    bool ok = sendText(fd, header);
+    static _Thread_local char buffer[65536];
+    for (long long left = info.st_size; ok && left > 0;) {  // a log still being written: only what was there when asked
+        ssize_t got = read(in, buffer, left < (long long)sizeof(buffer) ? (size_t)left : sizeof(buffer));
+        if (got <= 0) break;
+        ok = sendAll(fd, buffer, (size_t)got);
+        left -= got;
+    }
+    close(in);
 }
 static void sendStatus(int fd, int code, const char *reason, const char *body) {
     char response[512];
@@ -226,6 +257,7 @@ static void serveHttp(int fd) {
     for (char *line = strstr(request, "\r\n"); line && line < end; line = strstr(line + 2, "\r\n"))
         if (!strncasecmp(line + 2, "Content-Length:", 15)) length = atoll(line + 17);
     if (!strcmp(method, "GET") && (!strcmp(target, "/") || !strncmp(target, "/?", 2))) { sendPage(fd); return; }
+    if (!strcmp(method, "GET") && (!strcmp(target, "/log") || !strcmp(target, "/settings"))) { sendDownload(fd, target[1] == 'l'); return; }
     if (!strcmp(method, "PUT") && !strncmp(target, "/upload/", 8)) {
         char name[1024];
         snprintf(name, sizeof(name), "%s", target + 8);
@@ -510,12 +542,14 @@ void uploadServersStart(const char *rom_folder, const char *rom_ftp_path, bool w
         if (listeners[which] >= 0 || (which == 1 && !with_ftp)) continue;
         unsigned port = which ? UPLOAD_FTP_PORT : UPLOAD_HTTP_PORT;
         listeners[which] = listenOn(port);
+        while (which && listeners[which] < 0 && port < UPLOAD_FTP_PORT + 4) listeners[which] = listenOn(++port);  // 2121 taken: the next one
         if (listeners[which] < 0) {
             diagnosticsTrace("upload: %s on port %u could not start (errno %d)", which ? "FTP" : "web page", port, errno);
             continue;
         }
         pthread_create(&acceptors[which], NULL, acceptMain, which ? (void *)1 : NULL);
         atomic_store(which ? &status.ftp_running : &status.http_running, true);
+        if (which) atomic_store(&status.ftp_port, port);
         diagnosticsTrace("upload: %s listening on port %u", which ? "FTP" : "web page", port);
     }
 }

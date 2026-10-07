@@ -114,6 +114,14 @@ when no FTP server answered, a small FTP server on port 2121 that shows only the
 the ROM list after each file, and stop before the game starts. The installer recognises the title's FTP server and only
 uploads ROMs to it. `tools/upload_test.c` runs both servers on a PC.
 
+### Folder or image install (loader-23)
+
+At start the loader checks whether the title folder (`/app0`) is writable. In a folder install it is, and nothing changes.
+In an image install (`.ffpfsc`, mounted read-only) the ROMs live in `/download0/root/roms`, which only the title's own upload
+page and FTP server can reach (the FTP server is started even when an FTP payload runs, on 2121 or the next free port up to
+2125), the log is `/download0/root/prospero.log`, and the upload page links to the log and the game's settings for
+download (`/log`, `/settings`). The settings backup copy in the title folder only exists in a folder install.
+
 ### Client updates (loader-15)
 
 At every start the loader asks PokeMMO's download server whether the published client changed (one HEAD request; the

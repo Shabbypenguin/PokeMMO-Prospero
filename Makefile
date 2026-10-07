@@ -12,7 +12,7 @@ CLIENT_ZIP ?= private/PokeMMO-Client.zip
 PS5_HOST ?=
 FTP_PORT ?= 2121
 
-.PHONY: help env-check probe package-probe deploy-probe loader package-loader host-loader host-run overlay-preview updater-test fetch-client analyze clean
+.PHONY: help env-check probe package-probe deploy-probe loader package-loader host-loader host-run overlay-preview updater-test image-loader fetch-client analyze clean
 
 help:
 	@echo "make probe          build the hardware probe title  (PROBE_LOG_HOST=192.168.x.y optional)"
@@ -20,6 +20,7 @@ help:
 	@echo "make deploy-probe   upload it to /data/homebrew over FTP (PS5_HOST=..., FTP_PORT=$(FTP_PORT))"
 	@echo "make loader         build the loader title (milestone 1: self-checks + the client up to its graphics setup)"
 	@echo "make package-loader loader + installer in one zip (dist/pokemmo-prospero-loader-installer.zip)"
+	@echo "make image-loader   the loader as a .ffpfsc image (dist/)"
 	@echo "make host-loader    build the same loader for this Linux PC (build/host/prospero-host); host-run runs the client in it"
 	@echo "make fetch-client   download the PokeMMO client into $(CLIENT_ZIP) (never committed)"
 	@echo "make analyze        check a client release against what the loader supports"
@@ -61,6 +62,12 @@ loader: env-check
 		--assets build/loader-assets --content-suffix LOADER --download-mib 2048 \
 		--branding assets/branding
 	@mkdir -p dist && cp build/titles/$(LOADER_TITLE_ID)/dist/$(LOADER_TITLE_ID).zip dist/pokemmo-prospero-loader-$(LOADER_TITLE_ID).zip
+
+# The same title as one compressed image (.ffpfsc) for ShadowMountPlus, built by the boilerplate's packaging (MkPFS).
+image-loader: loader
+	$(MAKE) -C build/titles/$(LOADER_TITLE_ID) --no-print-directory ffpfsc
+	@mkdir -p dist && cp build/titles/$(LOADER_TITLE_ID)/dist/$(LOADER_TITLE_ID).ffpfsc dist/pokemmo-prospero-loader-$(LOADER_TITLE_ID).ffpfsc
+	@echo "Image: dist/pokemmo-prospero-loader-$(LOADER_TITLE_ID).ffpfsc"
 
 package-loader: loader
 	@rm -rf build/package && mkdir -p build/package/pokemmo-prospero-loader

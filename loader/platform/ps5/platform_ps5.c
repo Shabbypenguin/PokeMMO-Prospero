@@ -7,7 +7,8 @@
 //   code       only flexible memory is used for anything that becomes executable (RW, then mprotect to RX)
 //   listing    opendir is refused in titles (EPERM); open + getdents is tried, with an index file written by the installer as fallback
 //   DNS        getaddrinfo crashes a title (it lives in a WebKit-only module); sceNetResolver works
-//   log        UDP broadcast on port 18194 (+ the host in /app0/assets/loghost.txt) and /app0/prospero.log
+//   log        UDP broadcast on port 18194 (+ the host in /app0/assets/loghost.txt) and /app0/prospero.log (or
+//              /download0/root/prospero.log when the title folder is read-only)
 #include "platform.h"
 #include "linux_net_translate.h"
 #include <arpa/inet.h>
@@ -56,6 +57,7 @@ static int log_socket = -1;
 static struct sockaddr_in log_broadcast, log_host;
 static bool log_has_host, log_ready;
 static int log_file = -1;
+static const char *log_path = "";
 static void logOpen(void) {
     log_ready = true;
     log_socket = socket(AF_INET, SOCK_DGRAM, 0);
@@ -80,7 +82,21 @@ static void logOpen(void) {
             log_has_host = inet_pton(AF_INET, text, &log_host.sin_addr) == 1;
         }
     }
+    // The title folder when it is writable (a folder install, visible over FTP); else the title storage (an image install:
+    // the upload web page offers it for download).
     log_file = open("/app0/prospero.log", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (log_file < 0) {
+        mkdir("/download0/root", 0755);
+        log_file = open("/download0/root/prospero.log", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (log_file >= 0) log_path = "/download0/root/prospero.log";
+    } else
+        log_path = "/app0/prospero.log";
+}
+const char *platformLogPath(void) {
+    pthread_mutex_lock(&log_lock);
+    if (!log_ready) logOpen();
+    pthread_mutex_unlock(&log_lock);
+    return log_path;
 }
 void platformLogLine(const char *line) {
     char text[1100];

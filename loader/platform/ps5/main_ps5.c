@@ -41,7 +41,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define LOADER_MILESTONE "loader-22"
+#define LOADER_MILESTONE "loader-23"
 // ps5-opengl's app heap (malloc of the loader and of everything the client allocates with malloc): from direct memory.
 const size_t ps5_opengl_heap_size = 768u << 20;
 
@@ -161,7 +161,26 @@ static unsigned listFolder(const char *step, const char *path, char names[][256]
 // ---- ROMs (loader-16): what is in the ROM folder against what PokeMMO uses (roms.c) ---------------------------------------------
 // Without Black or White the game cannot be played: the ROM screen stays up before the game starts (Cross checks the folder
 // again after an upload; PokeMMO cannot get past its start without it, so there is no way round). Missing optional games are a note; holding Square shows the screen.
-#define ROM_FOLDER "/app0/roms"
+// loader-23: the title folder is writable in a folder install and read-only in an image (.ffpfsc). Read-only: the ROMs live in
+// the title storage (only the title's own upload page and FTP server can reach them), the log too (the page offers it).
+static bool title_writable;
+static char rom_folder[128] = "/app0/roms";
+#define ROM_FOLDER rom_folder
+static void chooseStorage(void) {
+    int fd = open("/app0/.prospero-write-check", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    title_writable = fd >= 0;
+    if (fd >= 0) {
+        close(fd);
+        unlink("/app0/.prospero-write-check");
+        unlink("/app0/prospero-write-test.bin");  // loader-1's probe file
+    } else {
+        mkdir("/download0/root", 0755);
+        snprintf(rom_folder, sizeof(rom_folder), "%s", "/download0/root/roms");
+        mkdir(rom_folder, 0755);
+    }
+    say("storage: title folder %s; ROMs in %s; log in %s", title_writable ? "writable (folder install)" : "read-only (image install)", rom_folder,
+        platformLogPath()[0] ? platformLogPath() : "(none)");
+}
 static _Atomic unsigned rom_count;  // games found
 static RomScan rom_scan;
 static pthread_mutex_t rom_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -175,7 +194,8 @@ static void scanRoms(void);
 static void romsChanged(void) { scanRoms(); }
 static void startUploads(void) {
     if (atomic_exchange(&uploads_started, true)) return;
-    uploadServersStart(ROM_FOLDER, ROM_FTP_PATH, existing_ftp_port == 0, romsChanged);
+    // A running FTP payload is only of use when it can reach the ROM folder (a folder install).
+    uploadServersStart(ROM_FOLDER, ROM_FTP_PATH, !(title_writable && existing_ftp_port), romsChanged);
 }
 static _Atomic bool rom_blocking;
 static _Atomic int rom_choice;  // 0 none, 1 check again (loader-22: PokeMMO cannot get past its start without Black/White)
@@ -542,6 +562,7 @@ static void updateClient(bool forget_installed) {
 #define SETTINGS SHARED_CONFIG "/main.properties"
 #define SETTINGS_COPY "/app0/settings/main.properties"
 static void backupSettings(void) {
+    if (!title_writable) return;  // an image install: the upload page offers the settings instead
     static time_t last_time;
     static off_t last_size = -1;
     struct stat info;
@@ -688,13 +709,14 @@ static void *gameThread(void *argument) {
                          .client_path = client_path,
                          // The game sees its folder as /game: the active slot, with the shared settings over /game/config. The C++
                          // runtime the client's native libraries need (libstdc++, libgcc_s) ships with the title.
-                         .mounts = {{"/game", NULL}, {"/game/config", SHARED_CONFIG}, {"/game/roms", "/app0/roms"}, {"/lib", "/app0/assets/lib"}},
+                         .mounts = {{"/game", NULL}, {"/game/config", SHARED_CONFIG}, {"/game/roms", NULL}, {"/lib", "/app0/assets/lib"}},
                          .mount_count = 4,
                          .arguments = options,
                          .timeout_seconds = 0,
                          .virtual_libraries = virtual_libraries,
                          .virtual_count = 8};
     config.mounts[0].native = active_dir;
+    config.mounts[2].native = rom_folder;
     mkdir(ROOT, 0755);
     linuxSdlSetFirstPicture(gameShowedPicture);
     bool ok = gameRun(&config);
@@ -882,7 +904,9 @@ static void drawScreen(unsigned frame) {
             snprintf(receiving, sizeof(receiving), "%u file(s) received.", atomic_load(&upload->received));
         RomUploadInfo info = {.address = upload_address,
                               .web = atomic_load(&upload->http_running),
-                              .ftp_port = existing_ftp_port ? existing_ftp_port : (atomic_load(&upload->ftp_running) ? UPLOAD_FTP_PORT : 0),
+                              .ftp_port = title_writable && existing_ftp_port ? existing_ftp_port
+                                          : atomic_load(&upload->ftp_running)    ? atomic_load(&upload->ftp_port)
+                                                                                 : 0,
                               .folder = ROM_FTP_PATH "/",
                               .receiving = receiving};
         romScreenDraw(&scan, &info, blocking);
@@ -940,6 +964,8 @@ int main(void) {
     signal(SIGPIPE, SIG_IGN);  // a write to a closed socket or pipe must fail with EPIPE, not end the title
     bool screen = screenOpen();
     say("screen: %s %dx%d", screen ? "ready" : "unavailable", width, height);
+    chooseStorage();
+    uploadSetDownloads(platformLogPath(), SETTINGS);
     pthread_t worker;
     pthread_attr_t attributes;
     pthread_attr_init(&attributes);

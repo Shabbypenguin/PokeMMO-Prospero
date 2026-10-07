@@ -98,6 +98,7 @@ int platformAudioWrite(int handle, const int16_t *interleaved);
 void platformAudioClose(int handle);
 
 // ---- end ----------------------------------------------------------------------------------------------------------------------
+const char *platformLogPath(void);  // the log file being written, "" when none
 // Opens a web address in the system's browser (the game goes to the background). 0 on success, else a platform code.
 int platformOpenUrl(const char *url);
 // Ends the title and returns to the system (PS5: the home screen).

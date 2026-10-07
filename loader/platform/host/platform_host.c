@@ -292,6 +292,10 @@ void platformHttpClose(PlatformHttp *h) {
 }
 
 void platformQuit(void) { exit(0); }
+const char *platformLogPath(void) {
+    const char *path = getenv("PROSPERO_LOG");
+    return path ? path : "";
+}
 
 void platformFatal(const char *message) {
     char line[512];
