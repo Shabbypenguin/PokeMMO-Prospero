@@ -41,7 +41,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define LOADER_MILESTONE "loader-25"
+#define LOADER_MILESTONE "loader-26"
 // ps5-opengl's app heap (malloc of the loader and of everything the client allocates with malloc): from direct memory.
 const size_t ps5_opengl_heap_size = 768u << 20;
 
@@ -196,6 +196,17 @@ static void startUploads(void) {
     if (atomic_exchange(&uploads_started, true)) return;
     // A running FTP payload is only of use when it can reach the ROM folder (a folder install).
     uploadServersStart(ROM_FOLDER, ROM_FTP_PATH, !(title_writable && existing_ftp_port), romsChanged);
+}
+// loader-26: where the full log can be had. A folder install: the title folder, over FTP. An image: the title storage, which
+// only the title's upload page reaches, and only before the game starts (the page stops then).
+static const char *logWhere(void) {
+    static char where[128];
+    if (title_writable) return "/data/homebrew/" PROSPERO_TITLE_ID "/prospero.log (FTP)";
+    if (atomic_load(&uploadStatus()->http_running))
+        snprintf(where, sizeof(where), "http://%s:%u/log (in a browser)", upload_address, (unsigned)UPLOAD_HTTP_PORT);
+    else
+        snprintf(where, sizeof(where), "http://%s:%u/log, before the game starts", upload_address, (unsigned)UPLOAD_HTTP_PORT);
+    return where;
 }
 static _Atomic bool rom_blocking;
 static _Atomic int rom_choice;  // 0 none, 1 check again (loader-22: PokeMMO cannot get past its start without Black/White)
@@ -794,7 +805,7 @@ static void loadingView(LoadingView *view, LoadingStep *step_view, char *detail,
     snprintf(version, sizeof(version), "Prospero %s (%s)", LOADER_MILESTONE, PROSPERO_VERSION);
     for (size_t i = 0; i < STEP_COUNT; ++i) step_view[i] = (LoadingStep){steps[i].name, atomic_load(&steps[i].state)};
     *view = (LoadingView){.status = "Getting ready", .detail = detail, .version = version, .revision = client_revision,
-                          .log_path = "/data/homebrew/" PROSPERO_TITLE_ID "/prospero.log", .steps = step_view, .step_count = STEP_COUNT, .frame = frame};
+                          .log_where = logWhere(), .steps = step_view, .step_count = STEP_COUNT, .frame = frame};
     detail[0] = 0;
     static const char *const checks[] = {"fs.list.app0", "fs.list.roms", "fs.romread"};
     unsigned checked = 0;
@@ -847,7 +858,8 @@ static void loadingView(LoadingView *view, LoadingStep *step_view, char *detail,
         view->advice = atomic_load(&start_advice);
     } else if (atomic_load(&game_finished) || atomic_load(&fatal_signals)) {
         view->problem = "PokeMMO stopped while starting";
-        view->advice = "Close the title with the PS button and start it again. If it keeps happening, send prospero.log from the title folder (FTP).";
+        view->advice = title_writable ? "Close the title with the PS button and start it again. If it keeps happening, send prospero.log from the title folder (FTP)."
+                                      : "Close the title with the PS button and start it again. If it keeps happening, start it, hold Square and save http://<console IP>:8080/log from a browser.";
     }
     if (!view->warning && stepState("fs.romread") == INFO) {
         static char note[96];
@@ -876,6 +888,7 @@ static void drawScreen(unsigned frame) {
     PlatformPad pad;
     bool read = platformPadRead(&pad);
     view.details = read && (pad.buttons & PLATFORM_PAD_TRIANGLE);
+    if (view.details && !title_writable) startUploads();  // an image: the page is the only way to the log (no-op once the game starts)
     static uint32_t before = ~0u;  // what is held when the question appears does not answer it
     uint32_t pressed = read ? pad.buttons & ~before : 0;
     before = read ? pad.buttons : 0;
@@ -943,7 +956,8 @@ static void *workMain(void *argument) {
     }
     if (slot_state.active && active_revision[0]) {
         waitForRequiredRom();
-        if (atomic_load(&uploads_started)) uploadServersStop();  // the ports are free again before the game starts
+        // The ports are free again before the game starts; marking them started keeps Square/Triangle from starting them after.
+        if (atomic_exchange(&uploads_started, true)) uploadServersStop();
         applyDefaults();
         pthread_t game;
         pthread_attr_t attributes;
@@ -994,7 +1008,7 @@ int main(void) {
         bool install_failed = atomic_load(&start_problem) != NULL;
         if ((atomic_load(&game_finished) || install_failed) && !reported) {
             reported = true;
-            say("DONE. Close the title with the PS button. The full log is above and in /data/homebrew/" PROSPERO_TITLE_ID "/prospero.log (FTP).");
+            say("DONE. Close the title with the PS button. The full log is above and in %s.", platformLogPath());
         }
         sceKernelUsleep(16000);
     }

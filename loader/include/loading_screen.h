@@ -22,7 +22,7 @@ typedef struct {
     const char *choices;  // its buttons
     const char *version;  // bottom right
     const char *revision;
-    const char *log_path;
+    const char *log_where;  // where the full log can be had, as a phrase ("/data/.../prospero.log (FTP)", "http://.../log")
     const LoadingStep *steps;
     unsigned step_count;
     bool details;  // Triangle held

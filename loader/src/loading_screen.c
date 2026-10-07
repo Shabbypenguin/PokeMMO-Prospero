@@ -61,7 +61,7 @@ static void drawDetails(const LoadingView *view) {
         overlayText(x + 40, y + 68, word, 32, DIM);
     }
     char line[200];
-    snprintf(line, sizeof(line), "Full log: %s (FTP)", view->log_path ? view->log_path : "prospero.log");
+    snprintf(line, sizeof(line), "Full log: %s", view->log_where ? view->log_where : "prospero.log");
     overlayTextCentered(OVERLAY_WIDTH / 2, 900, line, 34, DIM);
     overlayTextCentered(OVERLAY_WIDTH / 2, 960, "Release \x04 to go back", 34, DIM);
 }
