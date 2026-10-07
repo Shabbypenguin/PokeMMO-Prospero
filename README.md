@@ -4,8 +4,9 @@ An unofficial effort to run the official, unmodified PokeMMO Linux client native
 
 > **Status: pre-beta, playable on a console.** Login, the overworld and battles work, with graphics, audio, the
 > controller, an on-screen keyboard and the touchpad as a mouse. The title downloads and updates the PokeMMO client
-> itself and takes ROMs over its own web page or FTP server. Tested on firmware 12.40 with kstuff-lite and
-> ShadowMountPlus. Progress and open questions: [docs/plan.md](docs/plan.md), [docs/loader.md](docs/loader.md).
+> itself and takes ROMs over its own web page or FTP server. Each PS5 profile has its own PokeMMO login. An optional
+> [Google Drive backup](#google-drive-backup) keeps ROMs and logins across reinstalls (waiting on Google's review of the
+> app before it can be used). Tested on firmware 12.40 with kstuff-lite and ShadowMountPlus. Progress and open questions: [docs/plan.md](docs/plan.md), [docs/loader.md](docs/loader.md).
 
 This project is not affiliated with or endorsed by the PokeMMO team or Sony. The PokeMMO client is **never included**:
 the console downloads it from PokeMMO. You supply ROMs you dumped from cartridges you own.
@@ -32,10 +33,12 @@ It shows up as **PokeMMO Prospero** (`PPSA98001`; earlier test builds were named
 ### 2. First start
 
 1. Start the title. A loading screen with a progress bar appears.
-2. It downloads the PokeMMO client. Keep the title open until the bar finishes.
-3. Without Pokémon Black or White in the ROM folder, the **ROM screen** stays up and tells you how to upload them
+2. On a fresh install it asks **"Restore your ROMs and settings from Google Drive?"** Press **Circle** if you've never
+   used the backup; press **Cross** to sign in and get everything back (see [Google Drive backup](#google-drive-backup)).
+3. It downloads the PokeMMO client. Keep the title open until the bar finishes.
+4. Without Pokémon Black or White in the ROM folder, the **ROM screen** stays up and tells you how to upload them
    (next step). Once Black or White is there, the game starts.
-4. Log in. The title sets the game up for a TV the first time: fullscreen 1920×1080, 60 FPS, interface scale 1.25 and
+5. Log in. The title sets the game up for a TV the first time: fullscreen 1920×1080, 60 FPS, interface scale 1.25 and
    the controller layout below. Change anything you like in the game's settings; your changes are kept.
 
 ### 3. Upload your ROMs
@@ -119,6 +122,15 @@ The cursor hides a few seconds after you stop touching the pad.
 | Hold Triangle | Startup details: each check's result and where to get the full log |
 | Square (during the 5-second "games found" countdown) | ROM screen, to add optional games; Cross then starts the game |
 | Cross / Circle | Answer the update question (download / skip); it downloads by itself after a countdown |
+| Cross / Circle | Fresh install: answer "Restore from Google Drive?" (sign in / not now) |
+
+### ROM screen
+
+| Button | Does |
+|--------|------|
+| Cross | Check the folder again (Black/White missing) or start the game (adding optional games) |
+| Square | Sign in to Google Drive for the backup (only shown while not signed in) |
+| Circle | On the Google sign-in screen: cancel |
 
 ### Other
 
@@ -137,30 +149,58 @@ The cursor hides a few seconds after you stop touching the pad.
 and the ROMs are shared by everyone. To switch player, close the title, switch PS5 profile and start it again.
 
 The title's storage survives reboots, but **installing the title again (including a launcher update) erases it**: the
-client is downloaded again, ROMs must be uploaded again and every profile's settings go back to the defaults. Your
-PokeMMO account and characters are on PokeMMO's servers and are not affected. In an image install, save
-`http://<console IP>:8080/settings` first if you want a copy of your settings.
+client is downloaded again, ROMs must be uploaded again and every profile's settings go back to the defaults, unless you
+use the [Google Drive backup](#google-drive-backup). Your PokeMMO account and characters are on PokeMMO's servers and are
+not affected.
 
 Client updates are installed next to the working client and only replace it once the new one has shown a picture;
 if an update fails to start, the title goes back to the previous client by itself.
 
 ### Google Drive backup
 
-So that a reinstall (or a launcher update) doesn't cost you your ROMs and logins, the title can keep a copy in your own
-Google Drive:
+Because installing the title again erases its storage, the title can keep a copy of your ROMs and every profile's
+settings in **your own** Google Drive, and put them back after a reinstall or a launcher update. It's optional.
 
-- **Turn it on:** on the ROM screen press **Square**, or say yes when a fresh install asks "Restore your ROMs and settings
-  from Google Drive?". The TV shows a code: open `google.com/device` on your phone (or scan the QR code), enter the code and
-  allow access. One Google account per console.
-- **What goes up:** your ROMs (once each) and every PS5 profile's settings, including PokeMMO's remembered login, into a
-  folder called **PokeMMO Prospero** in that Drive. The title can only see files it made itself.
-- **When:** new ROMs a few seconds after they arrive; the playing profile's settings every minute they changed and when you
-  choose Exit in the game.
-- **Restoring:** after installing the title again, answer yes to the question and sign in: the ROMs and every profile's
-  settings come back before the game starts.
+> **Not usable yet:** Google is reviewing the app. Until it's approved, signing in fails with an access error. This
+> section describes how it works once it's live.
 
-Anyone with access to that Google account can read the backed-up settings and logins of every profile on the console. What the
-backup accesses: [shabbypenguin.github.io/PokeMMO-Prospero/privacy.html](https://shabbypenguin.github.io/PokeMMO-Prospero/privacy.html).
+**Turning it on**
+
+1. On the ROM screen, press **Square** ("Back up your ROMs and settings to Google Drive"). On a fresh install you can also
+   answer yes to "Restore your ROMs and settings from Google Drive?".
+2. The TV shows an address and a code. On your phone or computer, open `google.com/device` (or scan the QR code), sign
+   in to Google and enter the code.
+3. Allow PokeMMO Prospero to use its own files in your Drive. The TV notices by itself and carries on.
+
+Sign in once per console: one Google account holds the backup for every PS5 profile on it.
+
+**What it keeps, and when**
+
+| What | When it goes up |
+|------|-----------------|
+| Your ROMs (`.nds`, `.gba`), each once | A few seconds after uploads to the ROM screen stop, and right after you sign in |
+| The playing profile's PokeMMO settings, including the remembered login | Every minute while they change, and when you choose Exit in the game |
+
+Everything goes into a folder called **PokeMMO Prospero** in that Drive: `roms/` and one `profile-<number>.tar` per
+PS5 profile. It takes about as much Drive space as your ROMs (a few hundred MB for all five games). The client isn't
+backed up: it downloads again from PokeMMO by itself.
+
+**Restoring**
+
+After installing the title again, the first start asks "Restore your ROMs and settings from Google Drive?". Press
+**Cross** and sign in: the ROMs and every profile's settings come back before the game starts, with a progress bar.
+Settings a profile already has on the console are never overwritten.
+
+**Privacy and removal**
+
+- The title uses Google's most limited Drive permission: it only sees files it created. It can't see the rest of your
+  Drive. The data goes only between your PS5 and your Drive; the project has no servers and collects nothing.
+- Anyone with access to that Google account can read the backed-up settings and remembered logins of every profile
+  on the console.
+- To remove it: delete the **PokeMMO Prospero** folder in Drive, and remove the app's access at
+  [myaccount.google.com/permissions](https://myaccount.google.com/permissions). Deleting the title removes the sign-in
+  from the console.
+- Full details: [privacy page](https://shabbypenguin.github.io/PokeMMO-Prospero/privacy.html).
 
 ## Troubleshooting
 
@@ -169,6 +209,10 @@ backup accesses: [shabbypenguin.github.io/PokeMMO-Prospero/privacy.html](https:/
 | Red bar: "PokeMMO is not installed yet" | Check the console's internet connection, close the title (PS button) and start it again. |
 | ROM screen keeps coming back | Black or White isn't there or isn't readable. The screen says what each file is; unpack zipped files first. |
 | Web page or FTP won't connect | Use the address shown on screen, from the same network. Uploads (and the FTP server) only work before the game starts. |
+| Google sign-in says access is blocked, or "not a tester" | The app is still waiting for Google's review; the backup can't be used until it's approved. |
+| "Google hasn't verified this app" on the phone | Tap **Advanced**, then **Go to PokeMMO Prospero**. It's only the app's own folder in your Drive. |
+| ROM screen says "Google Drive: … (tried again later)" | The last backup failed (network, or Drive full). It tries again by itself; the reason is in the log on lines starting `cloud:`. |
+| The code on the TV expired | Press Circle, then Square on the ROM screen for a new code. Codes last about 15 minutes. |
 | "PokeMMO stopped while starting" or the game crashed | Start the title again. If it keeps happening, hold Triangle (it starts the upload page) and save `http://<console IP>:8080/log-previous` (the crashed start's log), then open an issue with it. |
 
 ## For developers
@@ -187,6 +231,10 @@ cd PokeMMO-Prospero
 A folder install (developers): unzip the folder title into `/data/homebrew/` on the console with an FTP payload and
 let your title mounter pick it up. Its ROMs go to `/data/homebrew/PPSA98001/roms/`.
 
+Google Drive backup: the project's OAuth client ("TVs and Limited Input devices", scope `drive.file`) is in
+`loader/src/cloud.c`. `make cloud-test` runs a full backup and restore against `tools/cloud_server.py`, a stand-in for
+Google's sign-in and Drive endpoints, on a PC.
+
 Releases: Actions → **release** → Run workflow, with a version such as `v0.1.0-beta`. It builds in CI and publishes a
 GitHub Release with `PPSA98001.ffpfsc` and its SHA-256 sum. Pushing a `v*` tag does the same.
 
@@ -202,6 +250,7 @@ supplies the Linux libc, SDL3, OpenAL, EGL/GL and GTK pieces it expects, on top 
 | `assets/` | branding and the default game settings |
 | `scripts/build-title.sh` | assembles a native PS5 title (FSELF + `libc.prx` + `sce_sys`) that links ps5-opengl |
 | `tools/` | client download and analysis, branding generator, UDP log receiver, test servers |
+| `site/` | the project's web page and privacy page ([GitHub Pages](https://shabbypenguin.github.io/PokeMMO-Prospero/)) |
 | `docs/` | [plan](docs/plan.md), [loader](docs/loader.md); the retired hardware probe is at branch [`probe-final`](https://github.com/Shabbypenguin/PokeMMO-Prospero/tree/probe-final) |
 
 ## Transparency
