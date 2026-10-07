@@ -291,6 +291,8 @@ void platformHttpClose(PlatformHttp *h) {
     free(h);
 }
 
+void platformQuit(void) { exit(0); }
+
 void platformFatal(const char *message) {
     char line[512];
     snprintf(line, sizeof(line), "FATAL %s", message);

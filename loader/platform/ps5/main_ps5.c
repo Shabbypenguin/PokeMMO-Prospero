@@ -41,7 +41,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define LOADER_MILESTONE "loader-20"
+#define LOADER_MILESTONE "loader-21"
 // ps5-opengl's app heap (malloc of the loader and of everything the client allocates with malloc): from direct memory.
 const size_t ps5_opengl_heap_size = 768u << 20;
 
@@ -387,15 +387,26 @@ static void switchTo(char slot, const char *revision) {
     noteRevision(revision);
     say("slots: switched to slot %c (revision %s), on trial until the game shows a picture", slot, revision);
 }
+// loader-21: once a new revision has proven itself, the previous client is deleted (on its own thread: a couple of hundred files),
+// so the second copy only exists while an update is on trial.
+static void *removeSlotMain(void *argument) {
+    slotsRemove((char)(uintptr_t)argument);
+    return NULL;
+}
 static void gameShowedPicture(void) {
     pthread_mutex_lock(&slot_lock);
+    char old = 0;
     if (slot_state.trial) {
         slot_state.trial = false;
         slot_state.failed[0] = 0;
+        old = slot_state.previous;
+        slot_state.previous = 0;
         slotsSave(&slot_state);
-        say("slots: revision %s started: slot %c confirmed", active_revision, slot_state.active);
+        say("slots: revision %s started: slot %c confirmed%s", active_revision, slot_state.active, old ? ", the previous client is removed" : "");
     }
     pthread_mutex_unlock(&slot_lock);
+    pthread_t thread;
+    if (old && !pthread_create(&thread, NULL, removeSlotMain, (void *)(uintptr_t)old)) pthread_detach(thread);
 }
 // The game ended before its first picture while on trial: back to the previous slot for the next start.
 static bool revertTrial(const char *why) {
@@ -428,11 +439,17 @@ static void prepareSlots(void) {
         if (revertTrial("the previous start ended before the game showed a picture")) {
             char now[64] = "";
             slotsRevision(slot_state.active, now, sizeof(now));
-            snprintf(slot_notice, sizeof(slot_notice), "PokeMMO revision %s did not start: back to revision %s.", failed, now);
+            snprintf(slot_notice, sizeof(slot_notice), "PokeMMO revision %s did not start (it may need a newer PokeMMO Prospero): back to %s.", failed, now);
         }
     }
     active_revision[0] = 0;
     if (slot_state.active && !slotsRevision(slot_state.active, active_revision, sizeof(active_revision))) slot_state.active = 0;
+    if (slot_state.active && !slot_state.trial && slot_state.previous) {  // a confirmed client from before loader-21 kept the old one
+        say("slots: removing the previous client (slot %c)", slot_state.previous);
+        slotsRemove(slot_state.previous);
+        slot_state.previous = 0;
+        slotsSave(&slot_state);
+    }
     if (slot_state.active) slotsPath(slot_state.active, active_dir, sizeof(active_dir));
     noteRevision(active_revision);
     say("slots: active %c (revision %s), previous %c, trial %d, failed %s", slot_state.active ? slot_state.active : '-',
@@ -686,10 +703,15 @@ static void *gameThread(void *argument) {
     linuxSdlSetFirstPicture(gameShowedPicture);
     bool ok = gameRun(&config);
     if (!ok && revertTrial(gameFailure())) {
-        atomic_store(&start_advice, "Close the title with the PS button and start it again: the previous revision will be used.");
-        atomic_store(&start_problem, "This PokeMMO revision could not start");
+        atomic_store(&start_advice, "It may need a newer PokeMMO Prospero. Close the title and start it again to use the previous revision.");
+        atomic_store(&start_problem, "This PokeMMO update could not start");
     }
     say("client: %s%s", ok ? "ended normally" : "ended: ", ok ? "" : gameFailure());
+    if (ok) {  // loader-21: the player chose Exit in the game: the title closes and the console goes back to the home screen
+        backupSettings();
+        say("client: exited from the game: closing the title");
+        platformQuit();
+    }
     mark("client.map", strstr(gameFailure(), "cannot be read") ? FAIL : PASS);
     mark("client.start", strstr(gameFailure(), "cannot be read") ? NOT_RUN : PASS);
     mark("client.end", ok ? PASS : INFO);

@@ -618,6 +618,18 @@ void platformAudioClose(int handle) { sceAudioOutClose(handle); }
 int sceSystemServiceLaunchWebBrowser(const char *uri, void *parameters);
 int platformOpenUrl(const char *url) { return sceSystemServiceLaunchWebBrowser(url, NULL); }
 
+// ---- quitting ----------------------------------------------------------------------------------------------------------------------
+// The way an application closes itself ("exit" to the system service, as on the PS4); if that does not end the process, _exit.
+int sceSystemServiceLoadExec(const char *path, char *const *arguments);
+void platformQuit(void) {
+    int result = sceSystemServiceLoadExec("exit", NULL);
+    char line[96];
+    snprintf(line, sizeof(line), "quit: sceSystemServiceLoadExec(exit)=0x%x, ending the process", (unsigned)result);
+    platformLogLine(line);
+    platformSleepNs(2000000000ull);
+    _exit(0);
+}
+
 // ---- end ----------------------------------------------------------------------------------------------------------------------
 void platformFatal(const char *message) {
     char line[512];

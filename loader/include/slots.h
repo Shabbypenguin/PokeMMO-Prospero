@@ -26,5 +26,6 @@ void slotsPath(char slot, char *out, size_t size);  // <root>/slots/<slot>
 const char *slotsSharedConfig(void);                // <root>/shared/config
 bool slotsRevision(char slot, char *out, size_t size);  // the revision of a complete slot
 bool slotsClear(char slot);                             // empties it (and drops its marker) for a new client
+bool slotsRemove(char slot);                            // deletes it (a confirmed update no longer needs the old client)
 bool slotsMarkComplete(char slot, const char *revision);
 char slotsOther(char slot);

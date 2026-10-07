@@ -80,13 +80,15 @@ their questions and no longer run.
 | Keyboard up: L2 / R2 | Symbols page / shift (once, caps lock, off) |
 | Keyboard up: touchpad, Options | Tab (next field), Enter |
 | Keyboard up: L3, Circle | Move the keyboard to the top or bottom, close it |
+| Exit in the game's menu | Closes the title and goes back to the home screen (loader-21) |
 | A link in the game | Opens in the PS5 web browser (the PS button brings the game back); if the browser cannot start, a box shows the address and a QR code |
 
 ### Client slots (loader-18)
 
 `/download0/root/slots/a` and `slots/b` each hold a complete client (a `.prospero-complete` marker names its revision);
 `slots/state` says which is active. A new client (download or developer copy) goes into the other slot, which becomes
-active "on trial". The trial ends when the game shows its first picture. If the game ends before that, or a start finds
+active "on trial". The trial ends when the game shows its first picture; the previous client is then deleted (loader-21), so
+the second copy only exists while an update is on trial. If the game ends before that, or a start finds
 a trial still open (the previous start crashed), the loader goes back to the previous slot, says so on the loading
 screen, and does not offer that revision again until a newer one is published. The settings live in
 `/download0/root/shared/config`, mounted over the game's `/game/config`, so both slots share them. The single client

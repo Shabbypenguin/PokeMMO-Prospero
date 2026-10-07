@@ -423,6 +423,7 @@ static void serveFtp(int control) {
                 }
             } else if (!strcmp(command, "DELE")) {
                 bool ok = !unlink(native);
+                diagnosticsTrace("upload: FTP delete %s%s", name, ok ? "" : " (no such file)");
                 reply(&f, ok ? "250 Deleted" : "550 No such file");
                 if (ok && on_change) on_change();
             } else if (!strcmp(command, "RNFR")) {
@@ -432,6 +433,7 @@ static void serveFtp(int control) {
                 char from[600];
                 snprintf(from, sizeof(from), "%s/%s", folder, f.rename_from);
                 bool ok = f.rename_from[0] && !rename(from, native);
+                diagnosticsTrace("upload: FTP rename %s -> %s%s", f.rename_from, name, ok ? "" : " FAILED");
                 reply(&f, ok ? "250 Renamed" : "550 Cannot rename");
                 if (ok && on_change) on_change();
             } else {  // STOR

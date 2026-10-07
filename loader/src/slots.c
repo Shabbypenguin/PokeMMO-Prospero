@@ -125,6 +125,14 @@ bool slotsClear(char slot) {
     return true;  // leftovers are overwritten by the new client
 }
 
+bool slotsRemove(char slot) {
+    char path[300];
+    slotsPath(slot, path, sizeof(path));
+    bool ok = removeTree(path, 0);
+    diagnosticsTrace("slots: slot %c removed%s", slot, ok ? "" : " (some files stayed)");
+    return ok;
+}
+
 bool slotsMigrate(void) {
     char old_game[300], slot_a[300], state_path[300], text[64] = "";
     snprintf(old_game, sizeof(old_game), "%s/game", root);
