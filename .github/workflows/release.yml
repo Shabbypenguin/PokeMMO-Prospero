@@ -1,0 +1,88 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Publishes a GitHub Release: builds the title in the pokemmo-ps5-buildenv image and attaches the .ffpfsc image and the
+# installer zip. Start it from the Actions tab (Release > Run workflow, give a version such as v0.1.0-beta), or push a tag
+# v*. GitHub creates the tag itself on a manual run. The PokeMMO client is never downloaded or attached.
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag to create, e.g. v0.1.0-beta"
+        required: true
+      prerelease:
+        description: "Mark as a pre-release"
+        type: boolean
+        default: true
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  packages: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # build-title.sh names the build with `git describe --tags`
+
+      - name: Work out the version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            version="$INPUT_VERSION"
+            [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "::error::version must look like v1.2.3 or v1.2.3-beta"; exit 1; }
+            if git rev-parse -q --verify "refs/tags/$version" >/dev/null || gh release view "$version" >/dev/null 2>&1; then
+              echo "::error::$version already exists"; exit 1
+            fi
+            git tag "$version"  # local only, so the build carries the version; the release step creates it on GitHub
+          else
+            version="$GITHUB_REF_NAME"
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      # Registry names must be lowercase; the owner name may not be (Shabbypenguin).
+      - name: Pull build environment image
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${OWNER,,}/pokemmo-ps5-buildenv:latest"
+          echo "IMAGE=$image" >> "$GITHUB_ENV"
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker pull "$image"
+
+      - name: Build the title, its installer zip and its image
+        run: docker run --rm -v "$PWD:/work" -w /work "$IMAGE" bash -c "make package-loader && make image-loader"
+
+      - name: Check the outputs
+        run: |
+          set -euo pipefail
+          for file in eboot.bin sce_module/libc.prx sce_sys/param.json; do
+            test -s "build/titles/PPSA98001/dist/PPSA98001/$file"
+          done
+          test -s dist/PPSA98001.ffpfsc
+          test -s dist/pokemmo-prospero-loader-installer.zip
+          grep -q "\"$VERSION\"" build/titles/PPSA98001/src/prospero_version.h || { echo "::error::the build does not carry $VERSION"; exit 1; }
+          (cd dist && sha256sum PPSA98001.ffpfsc pokemmo-prospero-loader-installer.zip > SHA256SUMS.txt)
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ github.event_name == 'push' || inputs.prerelease }}
+        run: |
+          set -euo pipefail
+          flags=(--title "PokeMMO-Prospero $VERSION" --generate-notes --target "$GITHUB_SHA")
+          [[ "$PRERELEASE" == "true" ]] && flags+=(--prerelease)
+          gh release create "$VERSION" "${flags[@]}" \
+            dist/PPSA98001.ffpfsc dist/pokemmo-prospero-loader-installer.zip dist/SHA256SUMS.txt

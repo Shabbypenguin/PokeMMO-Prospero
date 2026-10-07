@@ -165,6 +165,9 @@ cd PokeMMO-Prospero
 ../pokemmo-ps5-buildenv/ps5env make image-loader      # .ffpfsc image
 ```
 
+Releases: Actions → **release** → Run workflow, with a version such as `v0.1.0-beta`. It builds in CI and publishes a
+GitHub Release with `PPSA98001.ffpfsc`, the installer zip and their SHA-256 sums. Pushing a `v*` tag does the same.
+
 How it works: this ports the approach [PokeMMO-NX](https://github.com/Petit-Prince-dev/PokeMMO-NX) by Petit_Prince
 uses on the Nintendo Switch. A small C loader maps PokeMMO's own Linux executable (a GraalVM native image) and
 supplies the Linux libc, SDL3, OpenAL, EGL/GL and GTK pieces it expects, on top of the PS5's FreeBSD-derived OS, with
