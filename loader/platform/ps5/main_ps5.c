@@ -41,7 +41,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define LOADER_MILESTONE "loader-27"
+#define LOADER_MILESTONE "loader-28"
 // ps5-opengl's app heap (malloc of the loader and of everything the client allocates with malloc): from direct memory.
 const size_t ps5_opengl_heap_size = 768u << 20;
 
@@ -73,7 +73,7 @@ typedef struct {
 // loader-15: the system-module and HTTPS probes gave way to the client updater (client.update); client.dev is the developer copy
 // uploaded by the installer (--client).
 static Step steps[] = {
-    {"fs.list.app0", NOT_RUN}, {"fs.list.roms", NOT_RUN}, {"fs.romread", NOT_RUN},  {"client.dev", NOT_RUN},
+    {"fs.list.app0", NOT_RUN}, {"fs.list.roms", NOT_RUN}, {"fs.romread", NOT_RUN},  {"fs.data", NOT_RUN},  {"client.dev", NOT_RUN},
     {"client.update", NOT_RUN}, {"client.map", NOT_RUN},  {"client.start", NOT_RUN}, {"client.end", NOT_RUN},
 };
 #define STEP_COUNT (sizeof(steps) / sizeof(*steps))
@@ -858,8 +858,12 @@ static void loadingView(LoadingView *view, LoadingStep *step_view, char *detail,
         view->advice = atomic_load(&start_advice);
     } else if (atomic_load(&game_finished) || atomic_load(&fatal_signals)) {
         view->problem = "PokeMMO stopped while starting";
-        view->advice = title_writable ? "Close the title with the PS button and start it again. If it keeps happening, send prospero.log from the title folder (FTP)."
-                                      : "Close the title with the PS button and start it again. If it keeps happening, start it, hold Square and save http://<console IP>:8080/log from a browser.";
+        static char advice[200];
+        if (title_writable)
+            snprintf(advice, sizeof(advice), "%s", "Close the title with the PS button and start it again. If it keeps happening, send prospero.log from the title folder (FTP).");
+        else
+            snprintf(advice, sizeof(advice), "Save the log now from a browser: %s. Then close the title with the PS button and start it again.", logWhere());
+        view->advice = advice;
     }
     if (!view->warning && stepState("fs.romread") == INFO) {
         static char note[96];
@@ -930,11 +934,48 @@ static void drawScreen(unsigned frame) {
     overlayEnd();
 }
 
+// loader-28 probe: can the title keep files in /data, outside its own storage? There they would survive deleting or
+// reinstalling the title, and FTP payloads could reach them. Only tested here: nothing is moved yet. The probe file stays so that
+// it can be looked for over FTP (/data/pokemmo-prospero/probe.txt).
+static bool probeFolder(const char *folder) {
+    char path[160], text[160], back[160] = "";
+    errno = 0;
+    int made = mkdir(folder, 0755);
+    say("data probe: mkdir %s: %s (errno %d)", folder, made == 0 ? "made" : errno == EEXIST ? "already there" : "failed", made == 0 ? 0 : errno);
+    snprintf(path, sizeof(path), "%s/probe.txt", folder);
+    int length = snprintf(text, sizeof(text), "Written by PokeMMO-Prospero %s to test this folder; safe to delete.\n", LOADER_MILESTONE);
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) {
+        say("data probe: create %s failed (errno %d)", path, errno);
+        return false;
+    }
+    errno = 0;
+    bool written = write(fd, text, (size_t)length) == length;
+    int write_errno = errno;
+    close(fd);
+    fd = open(path, O_RDONLY);
+    ssize_t got = fd >= 0 ? read(fd, back, sizeof(back) - 1) : -1;
+    if (fd >= 0) close(fd);
+    bool same = written && got == length && !memcmp(back, text, (size_t)length);
+    say("data probe: %s: write %s (errno %d), read back %s", path, written ? "ok" : "failed", write_errno, same ? "the same" : "different or failed");
+    return same;
+}
+static void probeData(void) {
+    mark("fs.data", RUNNING);
+    struct stat info;
+    say("data probe: /data %s; /data/homebrew %s", stat("/data", &info) ? "not visible" : "visible", stat("/data/homebrew", &info) ? "not visible" : "visible");
+    bool data = probeFolder("/data/pokemmo-prospero");
+    bool user = probeFolder("/user/data/pokemmo-prospero");
+    say("data probe: /data %s, /user/data %s", data ? "WRITABLE" : "not writable", user ? "WRITABLE" : "not writable");
+    mark("fs.data", data || user ? PASS : INFO);
+}
+
 // The checks and the client start run behind the screen.
 static void *workMain(void *argument) {
     (void)argument;
     listFolder("fs.list.app0", "/app0", NULL, 0);
     prepareSlots();
+    probeData();
     char address[16];
     snprintf(upload_address, sizeof(upload_address), "%s", platformLocalIPv4(address) ? address : "<console IP>");
     existing_ftp_port = uploadDetectFtp();
@@ -956,8 +997,9 @@ static void *workMain(void *argument) {
     }
     if (slot_state.active && active_revision[0]) {
         waitForRequiredRom();
-        // The ports are free again before the game starts; marking them started keeps Square/Triangle from starting them after.
-        if (atomic_exchange(&uploads_started, true)) uploadServersStop();
+        // loader-28: uploads end before the game starts (Square/Triangle cannot start them again); the web page stays up for the log.
+        atomic_store(&uploads_started, true);
+        uploadServersDownloadsOnly(ROM_FOLDER);
         applyDefaults();
         pthread_t game;
         pthread_attr_t attributes;

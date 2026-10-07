@@ -53,6 +53,30 @@ bool linuxSdlInputSample(LinuxInputSnapshot *snapshot) {
     return true;
 }
 
+// The left stick as the d-pad. One direction at a time (the game walks in four), with hysteresis so that it does not flicker at the
+// edge of the dead zone or between two directions on a diagonal.
+#define STICK_PRESS 0.5f
+#define STICK_RELEASE 0.35f
+#define STICK_SWITCH 1.3f  // another direction takes over when it leans this much further than the held one
+enum { DPAD_UP = 11, DPAD_DOWN = 12, DPAD_LEFT = 13, DPAD_RIGHT = 14 };
+void linuxSdlInputStickToDpad(LinuxInputSnapshot *snapshot) {
+    static int held = -1;
+    float x = (float)snapshot->axes[0] / 32767.0f, y = (float)snapshot->axes[1] / 32767.0f;  // up is negative
+    float lean[4] = {-y, y, -x, x};  // up, down, left, right
+    int best = 0;
+    for (int i = 1; i < 4; ++i)
+        if (lean[i] > lean[best]) best = i;
+    if (held >= 0) {
+        float strength = lean[held - DPAD_UP];
+        if (strength < STICK_RELEASE)
+            held = -1;
+        else if (best != held - DPAD_UP && lean[best] > STICK_PRESS && lean[best] > strength * STICK_SWITCH)
+            held = DPAD_UP + best;
+    }
+    if (held < 0 && lean[best] > STICK_PRESS) held = DPAD_UP + best;
+    if (held >= 0) snapshot->buttons |= 1u << held;
+}
+
 // PS5: the loader's own on-screen keyboard (osk.c).
 void linuxSdlInputKeyboardRequest(bool show) { oskShow(show); }
 void linuxSdlInputKeyboardPump(void) {}

@@ -61,6 +61,7 @@ the steps behind the bar (green pass, red fail, blue note, yellow running):
 |------|-----------------|
 | fs.list.app0, fs.list.roms | Does `getdents` list folders where `opendir` was refused? |
 | fs.romread | Can every ROM be opened and its header read? (Note = no ROMs uploaded) |
+| fs.data | Can the title keep files in `/data/pokemmo-prospero` or `/user/data/pokemmo-prospero` (outside its own storage)? A probe file is left there (loader-28) |
 | sys.modules | Can system modules (SSL, HTTP, audio, the system keyboard) be loaded at run time, and from which path? |
 | net.https | A HEAD request through the system's HTTPS library (Note until it is linked directly; the client does its own HTTPS) |
 | client.install | The developer client copied into the title storage |
@@ -77,6 +78,7 @@ their questions and no longer run.
 | Touchpad: tap / two-finger tap | Left click / right click |
 | Touchpad: tap, then touch again and slide | Drag (the left button is held until the finger lifts) |
 | Touchpad: press down | Still the game's button (the bag); a press is never a click |
+| Left stick | Moves like the d-pad: the direction it leans most, from halfway out (loader-28) |
 | L3 | Stick cursor on/off: the left stick moves the cursor, R2 / L2 click left / right, the game sees an idle controller |
 | R3 | On-screen keyboard on/off (select the text field first) |
 | Keyboard up: d-pad / left stick, Cross | Move, type the highlighted key |
@@ -115,8 +117,9 @@ At start the loader checks whether an FTP server answers on the console (ports 2
 it runs a web page on port 8080 (open `http://<console IP>:8080` in any browser on the network, or scan the QR code next to
 it, and pick the files) and,
 when no FTP server answered, a small FTP server on port 2121 that shows only the ROM folder
-(`/data/homebrew/PPSA98001/roms`). Both write nothing but files in that folder, show progress on the ROM screen, re-read
-the ROM list after each file, and stop before the game starts. The installer recognises the title's FTP server and only
+(`/data/homebrew/PPSA98001/roms`). Both write nothing but files in that folder, show progress on the ROM screen and re-read
+the ROM list after each file. Before the game starts uploads end and the FTP server stops; since loader-28 the web page
+stays up during the game with only the log and the settings to download. The installer recognises the title's FTP server and only
 uploads ROMs to it. `tools/upload_test.c` runs both servers on a PC.
 
 ### Title ID (loader-24)

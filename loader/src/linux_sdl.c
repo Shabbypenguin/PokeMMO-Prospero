@@ -609,8 +609,10 @@ static void pumpInput(void) {
         if (keyboard_has_pad) {
             snapshot.buttons = 0;
             memset(snapshot.axes, 0, sizeof(snapshot.axes));
-        } else
-            linuxSdlCursorUpdate(&snapshot, width, height);
+        } else {
+            linuxSdlCursorUpdate(&snapshot, width, height);  // with the stick cursor on, the stick is the cursor's (axes zeroed)
+            linuxSdlInputStickToDpad(&snapshot);
+        }
         linuxSdlEventsUpdate(&snapshot);
     }
 }

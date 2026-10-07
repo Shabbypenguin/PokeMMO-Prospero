@@ -31,6 +31,7 @@ static UploadStatus status;
 static char folder[256], ftp_path[256], log_file[256], settings_file[256];
 static void (*on_change)(void);
 static _Atomic bool stopping;
+static _Atomic bool downloads_only;  // loader-28: the game runs; the page offers the log and the settings, uploads are off
 static int listeners[2] = {-1, -1};
 static pthread_t acceptors[2];
 static _Atomic int connections;
@@ -191,6 +192,13 @@ static void sendPage(int fd) {
             htmlEscape(escaped, sizeof(escaped), scan.files[i].note);
             n += snprintf(page + n, capacity - (size_t)n, "<p class=miss>%s: %s</p>", name, escaped);
         }
+    if (atomic_load(&downloads_only)) {
+        n += snprintf(page + n, capacity - (size_t)n,
+                      "<div class=box>The game is running, so uploading is off. To add ROMs, close the title and start it again, then hold "
+                      "Square on the loading screen.</div><p style='color:#8a9bbf'>For help with problems: "
+                      "<a style='color:#5aa0e8' href=/log>download the log</a> &middot; "
+                      "<a style='color:#5aa0e8' href=/settings>download the game's settings</a></p></main></body></html>");
+    } else
     n += snprintf(page + n, capacity - (size_t)n,
                   "<div class=box><label class=btn>Choose ROM files<input id=f type=file multiple accept='.nds,.gba' hidden></label>"
                   "<progress id=p value=0 max=1 hidden></progress><div id=log></div></div>"
@@ -259,6 +267,7 @@ static void serveHttp(int fd) {
     if (!strcmp(method, "GET") && (!strcmp(target, "/") || !strncmp(target, "/?", 2))) { sendPage(fd); return; }
     if (!strcmp(method, "GET") && (!strcmp(target, "/log") || !strcmp(target, "/settings"))) { sendDownload(fd, target[1] == 'l'); return; }
     if (!strcmp(method, "PUT") && !strncmp(target, "/upload/", 8)) {
+        if (atomic_load(&downloads_only)) { sendStatus(fd, 403, "Forbidden", "the game is running: uploading is off"); return; }
         char name[1024];
         snprintf(name, sizeof(name), "%s", target + 8);
         urlDecode(name);
@@ -403,6 +412,10 @@ static void serveFtp(int control) {
         }
         *newline = 0;
         if (newline > buffer && newline[-1] == '\r') newline[-1] = 0;
+        if (atomic_load(&downloads_only)) {  // loader-28: a session from before the game started ends at its next command
+            reply(&f, "421 The game is running: uploading is off");
+            goto done;
+        }
         char line[1024];
         snprintf(line, sizeof(line), "%s", buffer);
         size_t used = (size_t)(newline + 1 - buffer);
@@ -553,15 +566,23 @@ void uploadServersStart(const char *rom_folder, const char *rom_ftp_path, bool w
         diagnosticsTrace("upload: %s listening on port %u", which ? "FTP" : "web page", port);
     }
 }
+static void stopOne(int which) {
+    if (listeners[which] < 0) return;
+    pthread_join(acceptors[which], NULL);
+    close(listeners[which]);
+    listeners[which] = -1;
+    atomic_store(which ? &status.ftp_running : &status.http_running, false);
+}
 void uploadServersStop(void) {
     atomic_store(&stopping, true);
-    for (int which = 0; which < 2; ++which) {
-        if (listeners[which] < 0) continue;
-        pthread_join(acceptors[which], NULL);
-        close(listeners[which]);
-        listeners[which] = -1;
-        atomic_store(which ? &status.ftp_running : &status.http_running, false);
-    }
+    for (int which = 0; which < 2; ++which) stopOne(which);
+}
+void uploadServersDownloadsOnly(const char *rom_folder) {
+    atomic_store(&downloads_only, true);  // new uploads are refused from here on
+    for (unsigned waited = 0; status.current[0] && waited < 600; ++waited) usleep(200000);  // one arriving now is finished (2 min at most)
+    uploadServersStop();  // both acceptors end (within a second); downloads already being sent carry on
+    uploadServersStart(rom_folder, ftp_path, false, on_change);  // the web page alone
+    diagnosticsTrace("upload: the web page stays up during the game for the log and the settings (uploads off)");
 }
 
 unsigned uploadDetectFtp(void) {

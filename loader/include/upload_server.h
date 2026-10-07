@@ -5,7 +5,7 @@
 //   - a web page (port 8080): open it in a browser on a PC or phone and pick the files;
 //   - a small FTP server (port 2121, or the next free port up to 2125 when something else holds it): for FTP apps and the
 //     installer.
-// Both only ever write into the ROM folder. They stop when the game starts.
+// Both only ever write into the ROM folder. When the game starts uploads end; the web page stays up for the log (loader-28).
 #pragma once
 #include <stdatomic.h>
 #include <stdbool.h>
@@ -28,6 +28,9 @@ unsigned uploadDetectFtp(void);
 // `changed` is called after each file arrives (the ROM list is read again). Starts what is not running yet.
 void uploadServersStart(const char *folder, const char *ftp_path, bool with_ftp, void (*changed)(void));
 void uploadServersStop(void);
+// loader-28: before the game starts: uploads end (one arriving is finished first), the FTP server stops and the web page keeps
+// running (started if it was not) with only the log and the settings to download.
+void uploadServersDownloadsOnly(const char *folder);
 // Files the web page offers for download (/log, /settings); NULL or "" for none.
 void uploadSetDownloads(const char *log_path, const char *settings_path);
 UploadStatus *uploadStatus(void);
