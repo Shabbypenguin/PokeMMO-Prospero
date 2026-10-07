@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Builds the title (folder zip, installer zip and .ffpfsc image) inside the image published by the pokemmo-ps5-buildenv repository
+# Builds the title (folder zip for developers and .ffpfsc image) inside the image published by the pokemmo-ps5-buildenv repository
 # (same owner, see that repo's image workflow). The PokeMMO client is never downloaded here.
 name: build
 
@@ -30,8 +30,8 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
           docker pull "$image"
 
-      - name: Build the title, its installer zip and its image
-        run: docker run --rm -v "$PWD:/work" -w /work "$IMAGE" bash -c "make package-loader && make image-loader"
+      - name: Build the title and its image
+        run: docker run --rm -v "$PWD:/work" -w /work "$IMAGE" bash -c "make loader && make image-loader"
 
       - name: Check title contents
         run: |
@@ -44,7 +44,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: pokemmo-prospero-loader
-          path: dist/pokemmo-prospero-loader-installer.zip
+          path: dist/pokemmo-prospero-loader-PPSA98001.zip
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v4

@@ -27,7 +27,7 @@ make. Every file taken from PokeMMO-NX keeps its notice in the header and says w
 | Thread-local storage of loaded libraries | TLS descriptors on TPIDR_EL0 | general-dynamic `__tls_get_addr`, per-thread blocks created on first use (`%fs` belongs to the PS5's libc) |
 | Executable memory | Horizon code memory | written, then `mprotect` to read+execute (RWX pages fault on the PS5) |
 | Large memory | Horizon heap | address space from `sceKernelReserveVirtualRange`, direct memory committed in 64 KiB blocks |
-| Directory listing | newlib `opendir` | `open` + `getdents` (titles get EPERM from `opendir`), installer index file as fallback |
+| Directory listing | newlib `opendir` | `open` + `getdents` (titles get EPERM from `opendir`), an index file as fallback (the retired installer wrote one) |
 | DNS | Horizon `getaddrinfo` | `sceNetResolver` (`getaddrinfo` crashes PS5 titles) |
 | Page size | 4 KiB | 16 KiB system pages; the guest still sees 4 KiB pages |
 
@@ -44,13 +44,11 @@ Expected today: the client starts (logback, config, LWJGL, SDL3, libgdx), then s
 ## Running it on the console (milestone 1)
 
 ```bash
-../pokemmo-ps5-buildenv/ps5env make package-loader LOG_HOST=<your PC's IP>
+../pokemmo-ps5-buildenv/ps5env make image-loader LOG_HOST=<your PC's IP>
 ```
 
-Install with the installer from `dist/pokemmo-prospero-loader-installer.zip`, adding the client for this
-developer build: `python3 pokemmo_prospero_install.py --client PokeMMO-Client.zip` (the installer uploads the
-Linux part of the zip into the title folder as `client/`; release builds will download the client on the
-console instead). Then run `python3 tools/udplog.py --out loader.log` and start **PokeMMO Prospero**.
+Install `dist/PPSA98001.ffpfsc` (or unzip `dist/pokemmo-prospero-loader-PPSA98001.zip` into `/data/homebrew/` for a
+folder install); the console downloads the client itself. Then run `python3 tools/udplog.py --out loader.log` and start **PokeMMO Prospero**.
 
 Since loader-8 the screen shows the project logo, one progress bar and a line of status ("Checking files",
 "Installing PokeMMO", "Starting PokeMMO"). It stays up until the client creates its OpenGL window, then hands the
@@ -64,7 +62,6 @@ the steps behind the bar (green pass, red fail, blue note, yellow running):
 | fs.places | Which folders outside the title storage can the title write (a marker is left in each; a marker found again after a reinstall means that place survives)? `/data` is not visible to an image install (loader-33). Note = none (loader-34) |
 | sys.modules | Can system modules (SSL, HTTP, audio, the system keyboard) be loaded at run time, and from which path? |
 | net.https | A HEAD request through the system's HTTPS library (Note until it is linked directly; the client does its own HTTPS) |
-| client.install | The developer client copied into the title storage |
 | client.map, client.start, client.end | The client mapped, started, and how it ended |
 
 The storage probes of loader-1 (title folder writes, 1 GiB written to `/download0`) and loader-4's test tone answered
@@ -108,7 +105,7 @@ Before the game starts the loader reads the header of every file in the title's 
 the game code PokeMMO itself logs (`IRBO`, `BPRE`, ...) tells Black/White (required), FireRed, Emerald, Platinum and
 HeartGold/SoulSilver (optional) from games PokeMMO does not use (Black 2/White 2, LeafGreen, Ruby/Sapphire, Diamond/Pearl)
 and from compressed or unrelated files. Without Black or White a ROM screen stays up: what was found, what is missing, the
-FTP details to upload with (address, port 2121 and folder, each on its own line) and the installer as the other way; Cross checks the folder again,
+web page (with a QR code) and FTP details to upload with (address and port; the folder too only for an FTP payload in a folder install, since the title's own server opens in it; loader-35); Cross checks the folder again,
 and there is no way round it (PokeMMO cannot get past its start without Black/White). With only optional games missing, the loading screen offers the same screen for 5 seconds just before
 the game starts ("3 of 5 games found", Square; loader-31); taken, Cross then starts the game. The ROM screen is never shown
 over the client's own start, when the loader cannot answer input.
@@ -121,8 +118,7 @@ it, and pick the files) and,
 when no FTP server answered, a small FTP server on port 2121 that shows only the ROM folder
 (`/data/homebrew/PPSA98001/roms`). Both write nothing but files in that folder, show progress on the ROM screen and re-read
 the ROM list after each file. Both stop before the game starts. Each start keeps the previous start's log as
-`prospero-previous.log` (loader-29); the page offers it as `/log-previous`, so a crash can be looked at after starting again. The installer recognises the title's FTP server and only
-uploads ROMs to it. `tools/upload_test.c` runs both servers on a PC.
+`prospero-previous.log` (loader-29); the page offers it as `/log-previous`, so a crash can be looked at after starting again. `tools/upload_test.c` runs both servers on a PC.
 
 ### Title ID (loader-24)
 
@@ -148,7 +144,6 @@ Circle: skip; download after six seconds). With no client installed it is downlo
 runs is fetched (about 93 MB of the 271 MB zip, in two requests), unpacked as it arrives, every file checked against its
 CRC-32, into the client slot that is not in use (below). A dropped connection resumes where it stopped. HTTPS is the system's own (`libSceHttp`, certificates checked).
 `make updater-test` runs the same code on a PC against `tools/range_server.py` (`--drop-every` exercises the resume).
-The installer's `--redownload-client` makes the console forget its client once and download it again.
 
 The game's settings live in `config/main.properties` in the title storage, which FTP cannot see. The loader copies the
 file to `/data/homebrew/PPSA98001/settings/main.properties` at start and within a minute of any change (loader-11).

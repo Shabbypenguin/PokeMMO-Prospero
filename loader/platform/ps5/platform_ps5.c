@@ -5,7 +5,7 @@
 //   memory     anonymous mmap is limited to the ~400 MiB flexible budget and cannot reserve address space; the console's own
 //              reservation call (sceKernelReserveVirtualRange) can, and direct memory (GiBs) maps at fixed addresses inside it
 //   code       only flexible memory is used for anything that becomes executable (RW, then mprotect to RX)
-//   listing    opendir is refused in titles (EPERM); open + getdents is tried, with an index file written by the installer as fallback
+//   listing    opendir is refused in titles (EPERM); open + getdents is tried, with an index file (as the retired installer wrote) as fallback
 //   DNS        getaddrinfo crashes a title (it lives in a WebKit-only module); sceNetResolver works
 //   log        UDP broadcast on port 18194 (+ the host in /app0/assets/loghost.txt) and /app0/prospero.log (or
 //              /download0/root/prospero.log when the title folder is read-only)
@@ -364,7 +364,7 @@ int platformDirectoryRead(PlatformDirectory *directory, char name[256], uint8_t 
             }
             if (got < 0) {
                 *error = errno;
-                // Neither works on this file system: switch to the installer's index file, if there is one.
+                // Neither works on this file system: switch to an index file, if there is one.
                 if (!directory->offset && !directory->filled && (directory->index = readIndex(directory->path))) {
                     close(directory->fd);
                     directory->fd = -1;

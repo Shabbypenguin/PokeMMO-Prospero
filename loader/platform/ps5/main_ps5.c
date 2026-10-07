@@ -41,7 +41,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define LOADER_MILESTONE "loader-34"
+#define LOADER_MILESTONE "loader-35"
 // ps5-opengl's app heap (malloc of the loader and of everything the client allocates with malloc): from direct memory.
 const size_t ps5_opengl_heap_size = 768u << 20;
 
@@ -70,10 +70,10 @@ typedef struct {
 } Step;
 // loader-8: the loading screen shows one bar; these are the details behind it (hold Triangle). The storage probes of loader-1
 // (title folder writes, 1 GiB in /download0) and the audio beep of loader-4 answered their questions and are gone.
-// loader-15: the system-module and HTTPS probes gave way to the client updater (client.update); client.dev is the developer copy
-// uploaded by the installer (--client).
+// loader-15: the system-module and HTTPS probes gave way to the client updater (client.update). loader-35: the installer and its
+// developer copy of the client (client.dev) are gone; the updater is the only way the client arrives.
 static Step steps[] = {
-    {"fs.list.app0", NOT_RUN}, {"fs.list.roms", NOT_RUN}, {"fs.romread", NOT_RUN},  {"fs.places", NOT_RUN},  {"client.dev", NOT_RUN},
+    {"fs.list.app0", NOT_RUN}, {"fs.list.roms", NOT_RUN}, {"fs.romread", NOT_RUN},  {"fs.places", NOT_RUN},
     {"client.update", NOT_RUN}, {"client.map", NOT_RUN},  {"client.start", NOT_RUN}, {"client.end", NOT_RUN},
 };
 #define STEP_COUNT (sizeof(steps) / sizeof(*steps))
@@ -257,8 +257,7 @@ static void waitForRoms(void) {
     }
 }
 
-// ---- the client: copied from the title folder (dev builds) into the title storage, where it can write next to itself ------------------
-#define CLIENT_SOURCE "/app0/client"
+// ---- the client: in the title storage, where it can write next to itself --------------------------------------------------------------
 #define ROOT "/download0/root"
 // loader-18: the client lives in one of two slots (slots.c); `active_slot` is the one that starts, `target_slot` receives a
 // new client (the other one) before it is switched to.
@@ -314,92 +313,12 @@ static bool copyFile(const char *from, const char *to, char *buffer, size_t size
     if (out >= 0) close(out);
     return ok;
 }
-// manifest.txt (written by the installer): one "<size> <relative path>" line per file of the client's Linux part.
-static _Atomic unsigned long long install_done, install_total;  // bytes, for the loading bar
 static char client_revision[64];                                  // shown on the loading screen
 static void noteRevision(const char *revision) {
     size_t length = strcspn(revision, "\r\n");
     snprintf(client_revision, sizeof(client_revision), "%.*s", (int)(length < 60 ? length : 60), revision);
 }
 static void switchTo(char slot, const char *revision);
-// Developer builds: the client the installer uploaded (--client) goes into the other slot when it is newer than the active one.
-static bool installClient(void) {
-    mark("client.dev", RUNNING);
-    char source_revision[64] = "", installed_revision[64] = "", target[300];
-    snprintf(installed_revision, sizeof(installed_revision), "%s", active_revision);
-    char slot = slotsOther(slot_state.active ? slot_state.active : 'b');
-    slotsPath(slot, target, sizeof(target));
-    if (!readSmall(CLIENT_SOURCE "/revision.txt", source_revision, sizeof(source_revision))) {
-        say("client dev: no client uploaded to the title folder (the updater provides it)");
-        mark("client.dev", INFO);
-        return true;
-    }
-    if (updaterCompareRevisions(source_revision, installed_revision) <= 0 || !strcmp(source_revision, slot_state.failed)) {
-        say("client dev: uploaded revision %s, installed %s%s: nothing to copy", source_revision, installed_revision,
-            !strcmp(source_revision, slot_state.failed) ? " (it did not start before)" : "");
-        mark("client.dev", PASS);
-        return true;
-    }
-    slotsClear(slot);
-    int fd = open(CLIENT_SOURCE "/manifest.txt", O_RDONLY);
-    struct stat info;
-    char *manifest = NULL;
-    if (fd >= 0 && !fstat(fd, &info) && (manifest = malloc((size_t)info.st_size + 1))) {
-        ssize_t got = read(fd, manifest, (size_t)info.st_size);
-        manifest[got > 0 ? got : 0] = 0;
-    }
-    if (fd >= 0) close(fd);
-    if (!manifest) {
-        say("client install: manifest.txt missing");
-        mark("client.dev", FAIL);
-        return false;
-    }
-    say("client install: revision %s -> %s", installed_revision[0] ? installed_revision : "(none)", source_revision);
-    unsigned long long total = 0;
-    for (const char *line = manifest; *line; line += strcspn(line, "\n"), line += *line == '\n') {
-        unsigned long long size = 0;
-        if (sscanf(line, "%llu", &size) == 1) total += size;
-    }
-    atomic_store(&install_total, total);
-    size_t buffer_size = 4u << 20;
-    char *buffer = malloc(buffer_size);
-    unsigned files = 0;
-    unsigned long long bytes = 0;
-    bool ok = buffer != NULL;
-    uint64_t start = platformMonotonicNs();
-    for (char *line = manifest; ok && *line;) {
-        size_t length = strcspn(line, "\r\n");
-        char saved = line[length];
-        line[length] = 0;
-        unsigned long long size = 0;
-        char relative[400];
-        if (sscanf(line, "%llu %399[^\n]", &size, relative) == 2 && !strstr(relative, "..") && strcmp(relative, "revision.txt")) {
-            char from[512], to[512];
-            snprintf(from, sizeof(from), CLIENT_SOURCE "/%s", relative);
-            snprintf(to, sizeof(to), "%s/%s", target, relative);
-            ok = copyFile(from, to, buffer, buffer_size);
-            ++files;
-            bytes += size;
-            atomic_store(&install_done, bytes);
-            if (files % 200 == 0) say("client install: %u files, %llu MiB", files, bytes >> 20);
-        }
-        line[length] = saved;
-        line += length;
-        line += strspn(line, "\r\n");
-    }
-    // The revision goes last: an interrupted copy is redone on the next start.
-    char revision_path[340];
-    snprintf(revision_path, sizeof(revision_path), "%s/revision.txt", target);
-    if (ok) ok = copyFile(CLIENT_SOURCE "/revision.txt", revision_path, buffer, buffer_size);
-    if (ok) ok = slotsMarkComplete(slot, source_revision);
-    if (ok) switchTo(slot, source_revision);
-    free(buffer);
-    free(manifest);
-    say("client install: %s, %u files, %llu MiB in %.1f s", ok ? "done" : "FAILED", files, bytes >> 20, (double)(platformMonotonicNs() - start) / 1e9);
-    mark("client.dev", ok ? PASS : FAIL);
-    return ok;
-}
-
 // ---- the client updater (loader-15): the published client, read in place on PokeMMO's server (updater.c) ------------------------
 // A newer revision is offered on the loading screen (Cross: download, Circle: skip; download after a few seconds); without any
 // client installed it is downloaded straight away. The published ETag of the installed revision is kept, so an unchanged
@@ -862,15 +781,8 @@ static void loadingView(LoadingView *view, LoadingStep *step_view, char *detail,
     for (unsigned i = 0; i < 3; ++i) checked += stepState(checks[i]) != NOT_RUN && stepState(checks[i]) != RUNNING;
     view->fraction = 0.08f * (float)checked / 3.0f;
     if (checked < 3) view->status = "Checking files";
-    int dev = stepState("client.dev"), update = stepState("client.update"), phase = atomic_load(&update_phase);
-    if (dev == RUNNING) {
-        unsigned long long done = atomic_load(&install_done), total = atomic_load(&install_total);
-        view->status = "Installing PokeMMO";
-        if (total) {
-            view->fraction = 0.08f + 0.52f * (float)((double)done / (double)total);
-            snprintf(detail, detail_size, "%llu of %llu MB", done >> 20, total >> 20);
-        }
-    } else if (update == RUNNING) {
+    int update = stepState("client.update"), phase = atomic_load(&update_phase);
+    if (update == RUNNING) {
         view->fraction = 0.08f;
         if (phase == UPDATE_CHECKING)
             view->status = "Checking for updates";
@@ -902,7 +814,7 @@ static void loadingView(LoadingView *view, LoadingStep *step_view, char *detail,
     const char *problem = atomic_load(&start_problem);
     if (stepState("fs.list.app0") == FAIL) {
         view->problem = "The title's files cannot be read";
-        view->advice = "Run the installer on your computer again.";
+        view->advice = "Install the title again.";
     } else if (problem) {
         view->problem = problem;
         view->advice = atomic_load(&start_advice);
@@ -978,7 +890,7 @@ static void drawScreen(unsigned frame) {
                               .ftp_port = title_writable && existing_ftp_port ? existing_ftp_port
                                           : atomic_load(&upload->ftp_running)    ? atomic_load(&upload->ftp_port)
                                                                                  : 0,
-                              .folder = ROM_FTP_PATH "/",
+                              .folder = title_writable && existing_ftp_port ? ROM_FTP_PATH "/" : NULL,  // loader-35
                               .receiving = receiving};
         romScreenDraw(&scan, &info, mode);
         overlayEnd();
@@ -1090,16 +1002,7 @@ static void *workMain(void *argument) {
     existing_ftp_port = uploadDetectFtp();
     say("upload: %s", existing_ftp_port ? "an FTP server is already running" : "no FTP server is running: the ROM screen will start one");
     scanRoms();
-    // The installer's --redownload-client: forget the installed client (its files are overwritten, settings stay) and skip the
-    // developer copy this once, so the updater downloads it.
-    bool redownload = !unlink("/app0/redownload-client");
-    if (redownload) {
-        unlink(UPDATE_ETAG);
-        say("client: the installer asked for a fresh download (into the other slot)");
-        mark("client.dev", INFO);
-    } else
-        installClient();
-    updateClient(redownload);
+    updateClient(false);
     if (slot_notice[0] && !atomic_load(&update_warning_set)) {
         snprintf(update_warning, sizeof(update_warning), "%s", slot_notice);
         atomic_store(&update_warning_set, true);

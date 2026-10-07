@@ -8,8 +8,7 @@
 //   4. to update: the selected entries, fetched as a couple of large ranges (entries close together share one request), each
 //      unpacked with zlib as it arrives and checked against its CRC-32, into an empty client slot (slots.c). A dropped
 //      connection resumes where it stopped.
-// The selection is the installer's (installer/pokemmo_prospero_install.py, client_entries): everything but other systems'
-// binaries, launchers, logs and ROMs.
+// The selection (what the retired installer used to copy): everything but other systems' binaries, launchers, logs and ROMs.
 #include "updater.h"
 #include "diagnostics.h"
 #include "platform.h"

@@ -93,8 +93,8 @@ int main(int argc, char **argv) {
         LoadingView v = view;
         if (i == 1) {
             v.problem = "PokeMMO is not installed yet";
-            v.advice = "Run the installer on your computer and pick this console (developer builds: --client PokeMMO-Client.zip).";
-            v.warning = "No ROMs found: add them with the installer to play.";
+            v.advice = "Check the console's internet connection, then close the title and start it again.";
+            v.warning = "PokeMMO revision 32951 did not start: back to 32920.";
         }
         if (i == 2) v.details = true;
         if (i == 3) {

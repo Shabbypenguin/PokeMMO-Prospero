@@ -188,13 +188,15 @@ void romScreenDraw(const RomScan *scan, const RomUploadInfo *upload, int mode) {
         overlayText(left + 30, row, "Or with an FTP app", 30, DIM);
         snprintf(line, sizeof(line), "Address %s     Port %u", upload->address, upload->ftp_port);
         overlayText(left + 330, row + 2, line, 28, BLUE);
-        snprintf(line, sizeof(line), "Folder %s", upload->folder);
-        overlayTextFit(left + 330, row + 38, line, 28, width - 360 - (upload->web ? 260 : 0), BLUE);
-        row += 80;
+        if (upload->folder) {  // only for an FTP payload, which starts at the console's root (the title's own opens the ROM folder)
+            snprintf(line, sizeof(line), "Folder %s", upload->folder);
+            overlayTextFit(left + 330, row + 38, line, 28, width - 360 - (upload->web ? 260 : 0), BLUE);
+            row += 30;
+        }
+        row += 50;
     }
     if (upload->receiving && upload->receiving[0])
         overlayTextFit(left + 30, row - 4, upload->receiving, 26, width - 60 - (upload->web ? 260 : 0), GREEN);
-    overlayText(left + 30, box_y + 224, "Or run the installer on your PC and choose your ROM folder.", 24, DIM);
     if (blocking)
         overlayTextCentered(OVERLAY_WIDTH / 2, 995, "\x01 Check again", 34, TEXT);
     else

@@ -38,7 +38,7 @@ typedef struct {
     const char *address;  // the console's IP
     bool web;             // the title's upload page runs (port 8080)
     unsigned ftp_port;    // an FTP server to use, 0 when none
-    const char *folder;   // the ROM folder as FTP shows it
+    const char *folder;   // the ROM folder as an FTP payload shows it; NULL for the title's own server (it opens there)
     const char *receiving;  // "Receiving ...", or NULL
 } RomUploadInfo;
 enum { ROM_SCREEN_NONE, ROM_SCREEN_REQUIRED, ROM_SCREEN_OPTIONAL };

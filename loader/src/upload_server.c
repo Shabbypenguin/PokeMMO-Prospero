@@ -5,7 +5,7 @@
 // sockets wait with poll() so that stopping never hangs on a blocked accept. Everything written lands in the ROM folder:
 // a name with a slash, "..", or a control character is refused, and every file arrives under a temporary name first.
 //
-// FTP: enough of RFC 959/2428/3659 for FTP apps and Python's ftplib (the installer): USER/PASS (anything), PWD, CWD,
+// FTP: enough of RFC 959/2428/3659 for FTP apps and Python's ftplib: USER/PASS (anything), PWD, CWD,
 // CDUP, TYPE, PASV, EPSV, LIST, NLST, MLSD, STOR, SIZE, DELE, RNFR/RNTO, MKD, NOOP, QUIT. The paths above the ROM folder
 // (/data, /data/homebrew, ...) exist only so that clients can walk down to it.
 #include "upload_server.h"

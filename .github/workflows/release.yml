@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Publishes a GitHub Release: builds the title in the pokemmo-ps5-buildenv image and attaches the .ffpfsc image and the
-# installer zip. Start it from the Actions tab (Release > Run workflow, give a version such as v0.1.0-beta), or push a tag
+# Publishes a GitHub Release: builds the title in the pokemmo-ps5-buildenv image and attaches the .ffpfsc image. Start it from the Actions tab (Release > Run workflow, give a version such as v0.1.0-beta), or push a tag
 # v*. GitHub creates the tag itself on a manual run. The PokeMMO client is never downloaded or attached.
 name: release
 
@@ -62,8 +61,8 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
           docker pull "$image"
 
-      - name: Build the title, its installer zip and its image
-        run: docker run --rm -v "$PWD:/work" -w /work "$IMAGE" bash -c "make package-loader && make image-loader"
+      - name: Build the title and its image
+        run: docker run --rm -v "$PWD:/work" -w /work "$IMAGE" bash -c "make loader && make image-loader"
 
       - name: Check the outputs
         run: |
@@ -72,10 +71,9 @@ jobs:
             test -s "build/titles/PPSA98001/dist/PPSA98001/$file"
           done
           test -s dist/PPSA98001.ffpfsc
-          test -s dist/pokemmo-prospero-loader-installer.zip
           grep -q "\"$VERSION\"" build/titles/PPSA98001/src/prospero_version.h || { echo "::error::the build does not carry $VERSION"; exit 1; }
           # dist/ belongs to root (made inside the container): the sums go next to it, in the runner's own checkout.
-          (cd dist && sha256sum PPSA98001.ffpfsc pokemmo-prospero-loader-installer.zip) > SHA256SUMS.txt
+          (cd dist && sha256sum PPSA98001.ffpfsc) > SHA256SUMS.txt
 
       - name: Publish the release
         env:
@@ -86,4 +84,4 @@ jobs:
           flags=(--title "PokeMMO-Prospero $VERSION" --generate-notes --target "$GITHUB_SHA")
           [[ "$PRERELEASE" == "true" ]] && flags+=(--prerelease)
           gh release create "$VERSION" "${flags[@]}" \
-            dist/PPSA98001.ffpfsc dist/pokemmo-prospero-loader-installer.zip SHA256SUMS.txt
+            dist/PPSA98001.ffpfsc SHA256SUMS.txt

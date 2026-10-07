@@ -45,7 +45,7 @@ keeps PokeMMO-NX's copyright notice in its header and lists what changed (detail
 | Project | Author | License | Used for |
 |---------|--------|---------|----------|
 | [ps5-opengl](https://github.com/blackbearreloaded/ps5-opengl) | BlackBearReloaded | GPL-3.0-or-later | OpenGL 4.6 / EGL (Mesa) for the titles; its native-app glue (`app_heap.c`, `runtime_shims.c`, linker script, AGC link stubs, `param.json` base) is copied in at build time by `scripts/build-title.sh` |
-| [ps5-native-app-boilerplate](https://github.com/blackbearreloaded/ps5-native-app-boilerplate) | BlackBearReloaded | GPL-3.0-or-later | title build: FSELF writer, clean-room `libc.prx`, packaging, FTP deploy; the installer's upload order (temporary name, rename, `eboot.bin`/`param.json` last) follows its `tools/deploy.sh` |
+| [ps5-native-app-boilerplate](https://github.com/blackbearreloaded/ps5-native-app-boilerplate) | BlackBearReloaded | GPL-3.0-or-later | title build: FSELF writer, clean-room `libc.prx`, packaging, FTP deploy; the retired installer's upload order (temporary name, rename, `eboot.bin`/`param.json` last) followed its `tools/deploy.sh` |
 | [ps5-payload-sdk](https://github.com/ps5-payload-dev/sdk) | John Törnblom and contributors | GPL-3.0 (see upstream) | compiler target, headers and system-library stubs |
 | [kstuff-lite](https://github.com/EchoStretch/kstuff-lite) | EchoStretch | no license file upstream | console side: runs fake-signed titles (not part of this repository) |
 

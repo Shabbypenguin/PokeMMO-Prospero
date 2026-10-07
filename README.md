@@ -17,21 +17,17 @@ the console downloads it from PokeMMO. You supply ROMs you dumped from cartridge
 | What | Notes |
 |------|-------|
 | A jailbroken PS5 | Tested: firmware 12.40, kstuff-lite. |
-| A way to install homebrew | **ShadowMountPlus** (or a homebrew store that installs `.ffpfsc` images) for the image; or a folder-title loader plus an FTP payload (e.g. ftpsrv) for the installer. |
+| A way to install homebrew | **ShadowMountPlus**, or a homebrew store that installs `.ffpfsc` images. |
 | Internet on the PS5 | The first start downloads the PokeMMO client (about 93 MB); later starts check for updates. |
 | A PokeMMO account | Register from the title's login screen (it opens the PS5 web browser) or at pokemmo.com. |
 | Your ROMs | See [ROMs](#roms). |
 
 ### 1. Install the title
 
-**Image (recommended).** Install `PPSA98001.ffpfsc` with ShadowMountPlus or your homebrew
-store. Everything the title keeps (client, ROMs, settings, log) lives in its own storage on the console.
+Install `PPSA98001.ffpfsc` with ShadowMountPlus or your homebrew store. Everything the title keeps (client, ROMs,
+settings, log) lives in its own storage on the console.
 
-**Folder install (developers).** Unzip `pokemmo-prospero-loader-installer.zip` on your computer, start the FTP payload
-on the PS5, and run `install.bat` (Windows), `install.command` (macOS) or `./install.sh` (Linux). It asks for the
-console's IP address and FTP details and can upload your ROMs in the same go. See [installer/README.md](installer/README.md).
-
-Either way the title shows up as **PokeMMO Prospero** (`PPSA98001`; earlier test builds were named "PokeMMO Prospero (dev)").
+It shows up as **PokeMMO Prospero** (`PPSA98001`; earlier test builds were named "PokeMMO Prospero (dev)").
 
 ### 2. First start
 
@@ -49,8 +45,7 @@ The ROM screen lists what was found, what is missing and what is not usable, and
 | Way | How |
 |-----|-----|
 | **Web page** (easiest) | On a phone or computer on the same network, scan the QR code or open `http://<console IP>:8080` and pick the files. |
-| **FTP** | Connect an FTP app to the address, port and folder shown on screen (port 2121, or up to 2125 if 2121 is taken; folder `/data/homebrew/PPSA98001/roms`). |
-| **Installer** | Run the installer and answer yes to uploading ROMs. With an image install it talks to the title's own FTP server and only uploads ROMs. |
+| **FTP** | Connect an FTP app to the address and port shown on screen (2121, or up to 2125 if 2121 is taken). It opens straight in the ROM folder. |
 
 The screen shows each file arriving and checks the folder again afterwards; press **Cross** to check again yourself.
 The upload page and FTP server only run while the ROM screen is up, and stop when the game starts.
@@ -136,7 +131,7 @@ The cursor hides a few seconds after you stop touching the pad.
 | Install | Client, settings | ROMs | Log |
 |---------|------------------|------|-----|
 | Image | the title's storage | the title's storage | `http://<console IP>:8080/log` while the upload page runs; `/log-previous` is the start before |
-| Folder | the title's storage | `/data/homebrew/PPSA98001/roms` | `/data/homebrew/PPSA98001/prospero.log` (FTP); `prospero-previous.log` is the start before |
+| Folder (developers) | the title's storage | `/data/homebrew/PPSA98001/roms` | `/data/homebrew/PPSA98001/prospero.log` (FTP); `prospero-previous.log` is the start before |
 
 **Each PS5 profile has its own PokeMMO login and settings** (the loading screen says "Playing as <profile>"); the client
 and the ROMs are shared by everyone. To switch player, close the title, switch PS5 profile and start it again.
@@ -167,12 +162,15 @@ git clone https://github.com/Shabbypenguin/pokemmo-ps5-buildenv.git
 git clone https://github.com/Shabbypenguin/PokeMMO-Prospero.git   # side by side
 cd PokeMMO-Prospero
 ../pokemmo-ps5-buildenv/ps5env build                  # once: build the toolchain image
-../pokemmo-ps5-buildenv/ps5env make package-loader    # folder title + installer zip
+../pokemmo-ps5-buildenv/ps5env make loader            # folder title (dist/pokemmo-prospero-loader-PPSA98001.zip)
 ../pokemmo-ps5-buildenv/ps5env make image-loader      # .ffpfsc image
 ```
 
+A folder install (developers): unzip the folder title into `/data/homebrew/` on the console with an FTP payload and
+let your title mounter pick it up. Its ROMs go to `/data/homebrew/PPSA98001/roms/`.
+
 Releases: Actions → **release** → Run workflow, with a version such as `v0.1.0-beta`. It builds in CI and publishes a
-GitHub Release with `PPSA98001.ffpfsc`, the installer zip and their SHA-256 sums. Pushing a `v*` tag does the same.
+GitHub Release with `PPSA98001.ffpfsc` and its SHA-256 sum. Pushing a `v*` tag does the same.
 
 How it works: this ports the approach [PokeMMO-NX](https://github.com/Petit-Prince-dev/PokeMMO-NX) by Petit_Prince
 uses on the Nintendo Switch. A small C loader maps PokeMMO's own Linux executable (a GraalVM native image) and
@@ -183,7 +181,6 @@ supplies the Linux libc, SDL3, OpenAL, EGL/GL and GTK pieces it expects, on top 
 | Path | What |
 |------|------|
 | `loader/` | the loader: Linux runtime, SDL/GL/audio adapters, loading screen, updater, ROM check, upload servers |
-| `installer/` | Windows/macOS/Linux installer: uploads a title over FTP and optionally your ROMs ([README](installer/README.md)) |
 | `assets/` | branding and the default game settings |
 | `scripts/build-title.sh` | assembles a native PS5 title (FSELF + `libc.prx` + `sce_sys`) that links ps5-opengl |
 | `tools/` | client download and analysis, branding generator, UDP log receiver, test servers |

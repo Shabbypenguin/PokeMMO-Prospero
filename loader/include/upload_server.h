@@ -3,8 +3,8 @@
 //
 // Getting ROMs onto the console without anything else installed (upload_server.c), while the ROM screen is up:
 //   - a web page (port 8080): open it in a browser on a PC or phone and pick the files;
-//   - a small FTP server (port 2121, or the next free port up to 2125 when something else holds it): for FTP apps and the
-//     installer.
+//   - a small FTP server (port 2121, or the next free port up to 2125 when something else holds it): for FTP apps. It opens
+//     in the ROM folder.
 // Both only ever write into the ROM folder. They stop when the game starts.
 #pragma once
 #include <stdatomic.h>
