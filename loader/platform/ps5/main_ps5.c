@@ -41,7 +41,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define LOADER_MILESTONE "loader-33"
+#define LOADER_MILESTONE "loader-34"
 // ps5-opengl's app heap (malloc of the loader and of everything the client allocates with malloc): from direct memory.
 const size_t ps5_opengl_heap_size = 768u << 20;
 
@@ -73,7 +73,7 @@ typedef struct {
 // loader-15: the system-module and HTTPS probes gave way to the client updater (client.update); client.dev is the developer copy
 // uploaded by the installer (--client).
 static Step steps[] = {
-    {"fs.list.app0", NOT_RUN}, {"fs.list.roms", NOT_RUN}, {"fs.romread", NOT_RUN},  {"fs.data", NOT_RUN},  {"client.dev", NOT_RUN},
+    {"fs.list.app0", NOT_RUN}, {"fs.list.roms", NOT_RUN}, {"fs.romread", NOT_RUN},  {"fs.places", NOT_RUN},  {"client.dev", NOT_RUN},
     {"client.update", NOT_RUN}, {"client.map", NOT_RUN},  {"client.start", NOT_RUN}, {"client.end", NOT_RUN},
 };
 #define STEP_COUNT (sizeof(steps) / sizeof(*steps))
@@ -592,9 +592,34 @@ static void updateClient(bool forget_installed) {
 // ---- the game's settings: a copy where FTP can see it ---------------------------------------------------------------------------
 // The client keeps its settings in config/main.properties next to itself, in the title storage (not visible over FTP). A copy
 // goes to the title folder at start and whenever the file changes (checked every minute): a backup, and the way to read it.
-#define SHARED_CONFIG ROOT "/shared/config"  // mounted over the game's /game/config (slots.c)
-#define SETTINGS SHARED_CONFIG "/main.properties"
-#define SETTINGS_COPY "/app0/settings/main.properties"
+// loader-34: each console profile has its own settings (and PokeMMO's remembered login), in ROOT/users/<profile id>/config,
+// mounted over the game's /game/config. The client and the ROMs stay shared. A profile's first start gets the defaults.
+static char player_config[200] = ROOT "/users/default/config";
+static char player_label[96];  // "Playing as <name>", "" when unknown
+static char settings_path[240], settings_copy[240], defaults_mark[240];
+#define SETTINGS settings_path
+#define SETTINGS_COPY settings_copy
+static void choosePlayer(void) {
+    int id = -1;
+    char name[64] = "", folder[64] = "default";
+    if (platformUser(&id, name, sizeof(name))) snprintf(folder, sizeof(folder), "%d", id);
+    snprintf(player_config, sizeof(player_config), "%s/users/%s/config", ROOT, folder);
+    snprintf(settings_path, sizeof(settings_path), "%s/main.properties", player_config);
+    snprintf(defaults_mark, sizeof(defaults_mark), "%s/.prospero-defaults", player_config);
+    snprintf(settings_copy, sizeof(settings_copy), "/app0/settings/%s/main.properties", folder);
+    if (name[0]) snprintf(player_label, sizeof(player_label), "Playing as %s", name);
+    mkdir(ROOT, 0755);
+    slotsMakeFolders(player_config);
+    if (title_writable) {
+        char copy_folder[200];
+        snprintf(copy_folder, sizeof(copy_folder), "/app0/settings/%s", folder);
+        slotsMakeFolders(copy_folder);
+    }
+    // The single settings folder of loader-18 to loader-33 belonged to whoever played: everyone starts fresh instead.
+    struct stat info;
+    if (!stat(ROOT "/shared", &info)) say("settings: the old shared settings were removed%s", slotsRemoveFolder(ROOT "/shared") ? "" : " (some files stayed)");
+    say("settings: profile %s (%s): %s", folder, name[0] ? name : "name unknown", player_config);
+}
 static void backupSettings(void) {
     if (!title_writable) return;  // an image install: the upload page offers the settings instead
     static time_t last_time;
@@ -614,7 +639,7 @@ static void backupSettings(void) {
 // and applied once per DEFAULTS_VERSION to settings that exist, so that what the player changes afterwards stays. The version
 // applied is kept in config/.prospero-defaults. Lines of other keys are left exactly as they were.
 #define DEFAULTS "/app0/assets/defaults.properties"
-#define DEFAULTS_MARK SHARED_CONFIG "/.prospero-defaults"
+#define DEFAULTS_MARK defaults_mark
 static char *readWhole(const char *path) {
     int fd = open(path, O_RDONLY);
     struct stat info;
@@ -743,7 +768,7 @@ static void *gameThread(void *argument) {
                          .client_path = client_path,
                          // The game sees its folder as /game: the active slot, with the shared settings over /game/config. The C++
                          // runtime the client's native libraries need (libstdc++, libgcc_s) ships with the title.
-                         .mounts = {{"/game", NULL}, {"/game/config", SHARED_CONFIG}, {"/game/roms", NULL}, {"/lib", "/app0/assets/lib"}},
+                         .mounts = {{"/game", NULL}, {"/game/config", player_config}, {"/game/roms", NULL}, {"/lib", "/app0/assets/lib"}},
                          .mount_count = 4,
                          .arguments = options,
                          .timeout_seconds = 0,
@@ -830,7 +855,8 @@ static void loadingView(LoadingView *view, LoadingStep *step_view, char *detail,
     *view = (LoadingView){.status = "Getting ready", .detail = detail, .version = version, .revision = client_revision,
                           .log_where = logWhere(), .steps = step_view, .step_count = STEP_COUNT, .frame = frame};
     detail[0] = 0;
-    view->no_input = atomic_load(&client_started_ns) != 0;  // from the client's start on, nothing reads the controller here
+    view->no_input = atomic_load(&client_started_ns) != 0;
+    view->player = player_label;  // from the client's start on, nothing reads the controller here
     static const char *const checks[] = {"fs.list.app0", "fs.list.roms", "fs.romread"};
     unsigned checked = 0;
     for (unsigned i = 0; i < 3; ++i) checked += stepState(checks[i]) != NOT_RUN && stepState(checks[i]) != RUNNING;
@@ -962,40 +988,94 @@ static void drawScreen(unsigned frame) {
     overlayEnd();
 }
 
-// loader-28 probe: can the title keep files in /data, outside its own storage? There they would survive deleting or
-// reinstalling the title, and FTP payloads could reach them. Only tested here: nothing is moved yet. The probe file stays so that
-// it can be looked for over FTP (/data/pokemmo-prospero/probe.txt).
-static bool probeFolder(const char *folder) {
-    char path[160], text[160], back[160] = "";
-    errno = 0;
-    int made = mkdir(folder, 0755);
-    say("data probe: mkdir %s: %s (errno %d)", folder, made == 0 ? "made" : errno == EEXIST ? "already there" : "failed", made == 0 ? 0 : errno);
-    snprintf(path, sizeof(path), "%s/probe.txt", folder);
-    int length = snprintf(text, sizeof(text), "Written by PokeMMO-Prospero %s to test this folder; safe to delete.\n", LOADER_MILESTONE);
-    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (fd < 0) {
-        say("data probe: create %s failed (errno %d)", path, errno);
+// loader-34 probe: is there a place outside the title storage that the title can write and that outlives a reinstall? The
+// title storage (/download0) is wiped whenever the title is installed again; /data is not visible to an image install (loader-33:
+// ENOENT). Every folder found at / and /mnt is listed, and each candidate gets a marker file that the next start (after a
+// reinstall) looks for. Nothing is moved yet.
+static bool probePlace(const char *base, bool *survived) {
+    char folder[200], path[240], text[160], back[160] = "";
+    struct stat info;
+    if (stat(base, &info)) {
+        say("places: %s not visible (errno %d)", base, errno);
         return false;
     }
+    snprintf(folder, sizeof(folder), "%s/pokemmo-prospero", base);
     errno = 0;
-    bool written = write(fd, text, (size_t)length) == length;
-    int write_errno = errno;
-    close(fd);
-    fd = open(path, O_RDONLY);
+    int made = mkdir(folder, 0755);
+    int made_errno = made ? errno : 0;
+    snprintf(path, sizeof(path), "%s/marker.txt", folder);
+    int fd = open(path, O_RDONLY);
     ssize_t got = fd >= 0 ? read(fd, back, sizeof(back) - 1) : -1;
     if (fd >= 0) close(fd);
-    bool same = written && got == length && !memcmp(back, text, (size_t)length);
-    say("data probe: %s: write %s (errno %d), read back %s", path, written ? "ok" : "failed", write_errno, same ? "the same" : "different or failed");
-    return same;
+    back[got > 0 ? got : 0] = 0;
+    back[strcspn(back, "\r\n")] = 0;
+    *survived = got > 0;
+    int length = snprintf(text, sizeof(text), "PokeMMO-Prospero %s marker, written %llu s after boot; safe to delete.\n", LOADER_MILESTONE,
+                          (unsigned long long)(platformMonotonicNs() / 1000000000ull));
+    fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    bool written = fd >= 0 && write(fd, text, (size_t)length) == length;
+    int write_errno = fd >= 0 ? 0 : errno;
+    if (fd >= 0) close(fd);
+    say("places: %s: mkdir %s (errno %d), write %s (errno %d)%s%s", base, made == 0 ? "made" : made_errno == EEXIST ? "there" : "failed", made_errno,
+        written ? "ok" : "failed", write_errno, *survived ? "; marker from before found: " : "", *survived ? back : "");
+    return written;
 }
-static void probeData(void) {
-    mark("fs.data", RUNNING);
-    struct stat info;
-    say("data probe: /data %s; /data/homebrew %s", stat("/data", &info) ? "not visible" : "visible", stat("/data/homebrew", &info) ? "not visible" : "visible");
-    bool data = probeFolder("/data/pokemmo-prospero");
-    bool user = probeFolder("/user/data/pokemmo-prospero");
-    say("data probe: /data %s, /user/data %s", data ? "WRITABLE" : "not writable", user ? "WRITABLE" : "not writable");
-    mark("fs.data", data || user ? PASS : INFO);
+static void probePlaces(void) {
+    mark("fs.places", RUNNING);
+    listFolder("fs.places", "/", NULL, 0);
+    listFolder("fs.places", "/mnt", NULL, 0);
+    static const char *const candidates[] = {"/data", "/user/data", "/user", "/mnt/usb0", "/mnt/usb1", "/mnt/ext0", "/mnt/ext1", "/temp0", "/temp",
+                                             "/av_contents", "/hostapp"};
+    unsigned writable = 0, survived_count = 0;
+    char found[300] = "";
+    for (unsigned i = 0; i < sizeof(candidates) / sizeof(candidates[0]); ++i) {
+        bool survived = false;
+        if (probePlace(candidates[i], &survived)) {
+            ++writable;
+            if (strlen(found) + strlen(candidates[i]) + 2 < sizeof(found)) {
+                strcat(found, " ");
+                strcat(found, candidates[i]);
+            }
+        }
+        survived_count += survived;
+    }
+    say("places: %u writable:%s; %u with a marker from an earlier start", writable, writable ? found : " none", survived_count);
+    mark("fs.places", writable ? PASS : INFO);
+}
+
+// loader-34: PokeMMO may keep things (the remembered login) outside config/, in the client folder, which is shared by every
+// profile. Files in the active slot newer than its install are listed once at start, so that the log shows what the client wrote.
+static void listClientWrites(void) {
+    char marker[360];
+    struct stat installed;
+    snprintf(marker, sizeof(marker), "%s/.prospero-complete", active_dir);
+    if (!active_dir[0] || stat(marker, &installed)) return;
+    static char stack[16][400];
+    unsigned depth = 0, shown = 0, seen = 0;
+    snprintf(stack[depth++], sizeof(stack[0]), "%s", active_dir);
+    while (depth && seen < 20000) {
+        char folder[400];
+        snprintf(folder, sizeof(folder), "%s", stack[--depth]);
+        int error = 0;
+        PlatformDirectory *directory = platformDirectoryOpen(folder, &error);
+        if (!directory) continue;
+        char name[256], path[700];
+        uint8_t type;
+        uint64_t inode;
+        while (platformDirectoryRead(directory, name, &type, &inode, &error) == 1) {
+            ++seen;
+            snprintf(path, sizeof(path), "%s/%s", folder, name);
+            if (type == 4) {
+                if (depth < 16 && strlen(path) < sizeof(stack[0])) snprintf(stack[depth++], sizeof(stack[0]), "%s", path);
+                continue;
+            }
+            struct stat info;
+            if (stat(path, &info) || info.st_mtime <= installed.st_mtime || !strcmp(name, ".prospero-complete")) continue;
+            if (shown++ < 30) say("client writes: %s (%lld bytes)", path + strlen(active_dir), (long long)info.st_size);
+        }
+        platformDirectoryClose(directory);
+    }
+    say("client writes: %u file(s) in the client folder changed since it was installed", shown);
 }
 
 // The checks and the client start run behind the screen.
@@ -1003,7 +1083,8 @@ static void *workMain(void *argument) {
     (void)argument;
     listFolder("fs.list.app0", "/app0", NULL, 0);
     prepareSlots();
-    probeData();
+    listClientWrites();
+    probePlaces();
     char address[16];
     snprintf(upload_address, sizeof(upload_address), "%s", platformLocalIPv4(address) ? address : "<console IP>");
     existing_ftp_port = uploadDetectFtp();
@@ -1049,6 +1130,7 @@ int main(void) {
     bool screen = screenOpen();
     say("screen: %s %dx%d", screen ? "ready" : "unavailable", width, height);
     chooseStorage();
+    choosePlayer();
     uploadSetDownloads(platformLogPath(), SETTINGS);
     pthread_t worker;
     pthread_attr_t attributes;

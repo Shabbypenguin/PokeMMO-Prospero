@@ -566,6 +566,7 @@ bool platformLocalIPv4(char out[16]) {
 // ---- controller -------------------------------------------------------------------------------------------------------------------
 int sceUserServiceInitialize(void *parameters);
 int sceUserServiceGetInitialUser(int *user);
+int sceUserServiceGetUserName(int user, char *name, size_t size);
 int scePadInit(void);
 int scePadOpen(int user, int type, int index, const void *parameters);
 int scePadReadState(int handle, void *data);
@@ -604,6 +605,21 @@ bool platformPadRead(PlatformPad *pad) {
     pad->touches = data.touch_count > 2 ? 2 : data.touch_count;
     if (pad->touches) pad->touch_x = data.touch[0].x, pad->touch_y = data.touch[0].y;
     for (unsigned i = 0; i < pad->touches; ++i) pad->touch[i].x = data.touch[i].x, pad->touch[i].y = data.touch[i].y, pad->touch[i].id = data.touch[i].id;
+    return true;
+}
+
+static void userServiceStart(void) { sceUserServiceInitialize(NULL); }  // may already be up (the controller): its error is harmless
+bool platformUser(int *id, char *name, size_t name_size) {
+    static pthread_once_t once = PTHREAD_ONCE_INIT;
+    pthread_once(&once, userServiceStart);
+    int user = -1;
+    if (sceUserServiceGetInitialUser(&user) != 0 || user < 0) return false;
+    if (id) *id = user;
+    if (name && name_size) {
+        name[0] = 0;
+        if (sceUserServiceGetUserName(user, name, name_size) != 0) name[0] = 0;
+        name[name_size - 1] = 0;
+    }
     return true;
 }
 

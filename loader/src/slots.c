@@ -13,13 +13,11 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-static char root[256], shared_config[300];
+static char root[256];
 
 void slotsInit(const char *folder) {
     snprintf(root, sizeof(root), "%s", folder);
-    snprintf(shared_config, sizeof(shared_config), "%s/shared/config", root);
 }
-const char *slotsSharedConfig(void) { return shared_config; }
 char slotsOther(char slot) { return slot == 'a' ? 'b' : 'a'; }
 void slotsPath(char slot, char *out, size_t size) { snprintf(out, size, "%s/slots/%c", root, slot ? slot : 'a'); }
 
@@ -116,6 +114,8 @@ static bool removeTree(const char *path, unsigned depth) {
     platformDirectoryClose(directory);
     return (rmdir(path) == 0 || errno == ENOENT) && ok;
 }
+void slotsMakeFolders(const char *path) { makeFolders(path); }
+bool slotsRemoveFolder(const char *path) { return removeTree(path, 0); }
 bool slotsClear(char slot) {
     char path[300];
     slotsPath(slot, path, sizeof(path));
@@ -138,7 +138,6 @@ bool slotsMigrate(void) {
     snprintf(old_game, sizeof(old_game), "%s/game", root);
     snprintf(state_path, sizeof(state_path), "%s/slots/state", root);
     struct stat info;
-    makeFolders(shared_config);
     if (stat(old_game, &info) || !S_ISDIR(info.st_mode)) return true;
     if (!stat(state_path, &info)) return true;  // already slotted (a stray old folder is left alone)
     snprintf(slot_a, sizeof(slot_a), "%s/slots", root);
@@ -149,14 +148,7 @@ bool slotsMigrate(void) {
         diagnosticsTrace("slots: moving %s to %s failed errno=%d", old_game, slot_a, errno);
         return false;
     }
-    // The settings move out of the slot into the shared folder (they are mounted back over /game/config).
-    char old_config[320];
-    snprintf(old_config, sizeof(old_config), "%s/config", slot_a);
-    if (!stat(old_config, &info)) {
-        removeTree(shared_config, 0);
-        if (rename(old_config, shared_config)) diagnosticsTrace("slots: moving the settings failed errno=%d", errno);
-    }
-    makeFolders(shared_config);
+    // Its config/ stays where it is: each profile's own settings are mounted over /game/config (loader-34).
     char revision_path[320];
     snprintf(revision_path, sizeof(revision_path), "%s/revision.txt", slot_a);
     SlotState state = {.active = 'a'};

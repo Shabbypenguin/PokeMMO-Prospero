@@ -138,8 +138,11 @@ The cursor hides a few seconds after you stop touching the pad.
 | Image | the title's storage | the title's storage | `http://<console IP>:8080/log` while the upload page runs; `/log-previous` is the start before |
 | Folder | the title's storage | `/data/homebrew/PPSA98001/roms` | `/data/homebrew/PPSA98001/prospero.log` (FTP); `prospero-previous.log` is the start before |
 
-The title's storage survives reboots and title updates, but **deleting or reinstalling the title erases it**: the
-client is downloaded again, ROMs must be uploaded again and the game's settings go back to the defaults. Your
+**Each PS5 profile has its own PokeMMO login and settings** (the loading screen says "Playing as <profile>"); the client
+and the ROMs are shared by everyone. To switch player, close the title, switch PS5 profile and start it again.
+
+The title's storage survives reboots, but **installing the title again (including a launcher update) erases it**: the
+client is downloaded again, ROMs must be uploaded again and every profile's settings go back to the defaults. Your
 PokeMMO account and characters are on PokeMMO's servers and are not affected. In an image install, save
 `http://<console IP>:8080/settings` first if you want a copy of your settings.
 

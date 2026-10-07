@@ -73,6 +73,7 @@ void loadingScreenDraw(const LoadingView *view) {
     overlayClear(BACKGROUND);
     overlayLogo(OVERLAY_WIDTH / 2 - 210, 150, 420);
     overlayTextCentered(OVERLAY_WIDTH / 2, 610, "PokeMMO Prospero", 64, TEXT);
+    if (view->player && view->player[0]) overlayTextCentered(OVERLAY_WIDTH / 2, 688, view->player, 30, DIM);
     const float bar_x = 560, bar_y = 740, bar_w = 800, bar_h = 12;
     float fraction = view->fraction < 0 ? 0 : view->fraction > 1 ? 1 : view->fraction;
     overlayRect(bar_x, bar_y, bar_w, bar_h, TRACK);

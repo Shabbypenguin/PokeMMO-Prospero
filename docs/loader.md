@@ -61,7 +61,7 @@ the steps behind the bar (green pass, red fail, blue note, yellow running):
 |------|-----------------|
 | fs.list.app0, fs.list.roms | Does `getdents` list folders where `opendir` was refused? |
 | fs.romread | Can every ROM be opened and its header read? (Note = no ROMs uploaded) |
-| fs.data | Can the title keep files in `/data/pokemmo-prospero` or `/user/data/pokemmo-prospero` (outside its own storage)? A probe file is left there (loader-28) |
+| fs.places | Which folders outside the title storage can the title write (a marker is left in each; a marker found again after a reinstall means that place survives)? `/data` is not visible to an image install (loader-33). Note = none (loader-34) |
 | sys.modules | Can system modules (SSL, HTTP, audio, the system keyboard) be loaded at run time, and from which path? |
 | net.https | A HEAD request through the system's HTTPS library (Note until it is linked directly; the client does its own HTTPS) |
 | client.install | The developer client copied into the title storage |
@@ -98,7 +98,8 @@ active "on trial". The trial ends when the game shows its first picture; the pre
 the second copy only exists while an update is on trial. If the game ends before that, or a start finds
 a trial still open (the previous start crashed), the loader goes back to the previous slot, says so on the loading
 screen, and does not offer that revision again until a newer one is published. The settings live in
-`/download0/root/shared/config`, mounted over the game's `/game/config`, so both slots share them. The single client
+`/download0/root/users/<console profile id>/config` (loader-34; `shared/config` before, removed on the first start), mounted over the
+game's `/game/config`: each PS5 profile has its own, used by either slot. The single client
 folder of loader-17 and earlier (`/download0/root/game`) becomes slot a on the first start.
 
 ### ROMs (loader-16)

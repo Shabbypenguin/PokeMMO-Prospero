@@ -93,6 +93,8 @@ typedef struct {
     } touch[2];                 // every touch (loader-27: the touchpad is a trackpad)
 } PlatformPad;
 bool platformPadRead(PlatformPad *pad);  // false when no controller can be read
+// loader-34: the console profile that started the title (its id stays the same on this console) and its name. False when unknown.
+bool platformUser(int *id, char *name, size_t name_size);
 
 // ---- audio ---------------------------------------------------------------------------------------------------------------------
 // 48 kHz stereo 16-bit output in blocks of `frames` (a multiple of 256). platformAudioWrite blocks until the block is queued, which

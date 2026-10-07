@@ -84,7 +84,7 @@ int main(int argc, char **argv) {
     static const LoadingStep steps[] = {{"fs.list.app0", 1}, {"fs.list.roms", 1}, {"fs.romread", 1}, {"sys.modules", 1}, {"net.https", 3},
                                         {"client.install", 4}, {"client.map", 0}, {"client.start", 0}, {"client.end", 0}};
     LoadingView view = {.fraction = 0.35f, .status = "Installing PokeMMO", .detail = "212 of 498 MB", .version = "Prospero loader-8 (v0.8-dev)",
-                        .revision = "32920", .log_where = "http://192.168.1.50:8080/log (in a browser)", .steps = steps, .step_count = 9, .frame = 70};
+                        .revision = "32920", .player = "Playing as Shabby", .log_where = "http://192.168.1.50:8080/log (in a browser)", .steps = steps, .step_count = 9, .frame = 70};
     struct {
         const char *name;
         void (*change)(LoadingView *);

@@ -304,6 +304,11 @@ void platformFatal(const char *message) {
     abort();
 }
 
+bool platformUser(int *id, char *name, size_t name_size) {  // a PC has no console profile: one player, "pc"
+    if (id) *id = 0;
+    if (name && name_size) snprintf(name, name_size, "%s", "");
+    return false;
+}
 bool platformPadRead(PlatformPad *pad) {
     *pad = (PlatformPad){0};
     return false;
