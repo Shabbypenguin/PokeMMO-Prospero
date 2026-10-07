@@ -67,8 +67,8 @@ loader: env-check
 # The same title as one compressed image (.ffpfsc) for ShadowMountPlus, built by the boilerplate's packaging (MkPFS).
 image-loader: loader
 	$(MAKE) -C build/titles/$(LOADER_TITLE_ID) --no-print-directory ffpfsc
-	@mkdir -p dist && cp build/titles/$(LOADER_TITLE_ID)/dist/$(LOADER_TITLE_ID).ffpfsc dist/pokemmo-prospero-loader-$(LOADER_TITLE_ID).ffpfsc
-	@echo "Image: dist/pokemmo-prospero-loader-$(LOADER_TITLE_ID).ffpfsc"
+	@mkdir -p dist && cp build/titles/$(LOADER_TITLE_ID)/dist/$(LOADER_TITLE_ID).ffpfsc dist/$(LOADER_TITLE_ID).ffpfsc
+	@echo "Image: dist/$(LOADER_TITLE_ID).ffpfsc"
 
 package-loader: loader
 	@rm -rf build/package && mkdir -p build/package/pokemmo-prospero-loader

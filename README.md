@@ -24,7 +24,7 @@ the console downloads it from PokeMMO. You supply ROMs you dumped from cartridge
 
 ### 1. Install the title
 
-**Image (recommended).** Install `pokemmo-prospero-loader-PPSA98001.ffpfsc` with ShadowMountPlus or your homebrew
+**Image (recommended).** Install `PPSA98001.ffpfsc` with ShadowMountPlus or your homebrew
 store. Everything the title keeps (client, ROMs, settings, log) lives in its own storage on the console.
 
 **Folder install (developers).** Unzip `pokemmo-prospero-loader-installer.zip` on your computer, start the FTP payload
