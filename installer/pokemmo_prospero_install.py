@@ -108,7 +108,7 @@ class Package:
         self.root = root
         param = json.loads((root / "sce_sys" / "param.json").read_text(encoding="utf-8"))
         self.title_id = param.get("titleId", "")
-        if not re.fullmatch(r"PPSA\d{5}", self.title_id):
+        if not re.fullmatch(r"[A-Z0-9]{9}", self.title_id):
             raise ValueError(f"param.json has an invalid titleId: {self.title_id!r}")
         names = param.get("localizedParameters", {})
         self.name = names.get(names.get("defaultLanguage", "en-US"), {}).get("titleName", self.title_id)
@@ -123,7 +123,7 @@ class Package:
 
 
 def title_dir_in(directory):
-    """A title folder is a directory named PPSA#####, or one containing sce_sys/param.json."""
+    """A title folder is a directory named after its title id (PPSA##### or another 9 characters), or one containing sce_sys/param.json."""
     if (directory / "sce_sys" / "param.json").is_file():
         return directory
     candidates = [d for d in directory.iterdir() if d.is_dir() and (d / "sce_sys" / "param.json").is_file()]
@@ -161,8 +161,8 @@ def find_default_package():
     candidates = []
     for directory in (here, here.parent, here.parent / "dist"):
         if directory.is_dir():
-            candidates += [p for p in directory.glob("*.zip") if "pokemmo-prospero" in p.name.lower() or re.match(r"PPSA\d{5}", p.name)]
-            candidates += [p for p in directory.iterdir() if p.is_dir() and re.fullmatch(r"PPSA\d{5}", p.name)]
+            candidates += [p for p in directory.glob("*.zip") if "pokemmo-prospero" in p.name.lower() or re.match(r"[A-Z0-9]{9}", p.name)]
+            candidates += [p for p in directory.iterdir() if p.is_dir() and re.fullmatch(r"[A-Z0-9]{9}", p.name)]
     candidates = sorted(set(candidates), key=lambda p: p.stat().st_mtime, reverse=True)
     return candidates
 
