@@ -4,7 +4,8 @@
 SHELL := bash
 
 PROBE_TITLE_ID ?= PPSA27165
-LOADER_TITLE_ID ?= PPSA27166
+# Homebrew range: retail ids are far lower; PS5 homebrew uses PPSA99xxx (homebrew.page catalog), 98xxx was free.
+LOADER_TITLE_ID ?= PPSA98001
 # Optional: your PC's LAN address; the probe also sends its log there (it always broadcasts too).
 PROBE_LOG_HOST ?=
 CLIENT_ZIP ?= private/PokeMMO-Client.zip

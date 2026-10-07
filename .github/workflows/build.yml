@@ -36,7 +36,7 @@ jobs:
       - name: Check title contents
         run: |
           set -euo pipefail
-          for title in build/titles/PPSA27165/dist/PPSA27165 build/titles/PPSA27166/dist/PPSA27166; do
+          for title in build/titles/PPSA27165/dist/PPSA27165 build/titles/PPSA98001/dist/PPSA98001; do
             for file in eboot.bin sce_module/libc.prx sce_sys/param.json; do
               test -s "$title/$file"
             done

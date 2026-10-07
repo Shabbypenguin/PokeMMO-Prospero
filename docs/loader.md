@@ -110,9 +110,16 @@ At start the loader checks whether an FTP server answers on the console (ports 2
 it runs a web page on port 8080 (open `http://<console IP>:8080` in any browser on the network, or scan the QR code next to
 it, and pick the files) and,
 when no FTP server answered, a small FTP server on port 2121 that shows only the ROM folder
-(`/data/homebrew/PPSA27166/roms`). Both write nothing but files in that folder, show progress on the ROM screen, re-read
+(`/data/homebrew/PPSA98001/roms`). Both write nothing but files in that folder, show progress on the ROM screen, re-read
 the ROM list after each file, and stop before the game starts. The installer recognises the title's FTP server and only
 uploads ROMs to it. `tools/upload_test.c` runs both servers on a PC.
+
+### Title ID (loader-24)
+
+The title is `PPSA98001`. Retail PS5 games use `PPSA` + five digits and are numbered far lower; PS5 homebrew settles in
+`PPSA99xxx` (the [homebrew.page](https://homebrew.page/) catalog lists none in `PPSA98xxx`). A non-`PPSA` id
+(`POKEMMOP5`) did not work on a console. Earlier builds used `PPSA27166`, which a retail game could also get, so a
+`PPSA98001` install is a new title: its own storage, client download and ROM upload.
 
 ### Folder or image install (loader-23)
 
@@ -134,7 +141,7 @@ CRC-32, into the client slot that is not in use (below). A dropped connection re
 The installer's `--redownload-client` makes the console forget its client once and download it again.
 
 The game's settings live in `config/main.properties` in the title storage, which FTP cannot see. The loader copies the
-file to `/data/homebrew/PPSA27166/settings/main.properties` at start and within a minute of any change (loader-11).
+file to `/data/homebrew/PPSA98001/settings/main.properties` at start and within a minute of any change (loader-11).
 Before the game starts, the loader applies `assets/settings/defaults.properties` (fullscreen 1920x1080, 60 fps, UI scale
 1.25, the controller layout): in full on a new install, and once per `DEFAULTS_VERSION` on an existing one, so later changes in the game stay
 (loader-12). Raise `DEFAULTS_VERSION` to push changed defaults to everyone once.

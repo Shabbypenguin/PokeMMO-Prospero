@@ -84,7 +84,7 @@ int main(int argc, char **argv) {
     static const LoadingStep steps[] = {{"fs.list.app0", 1}, {"fs.list.roms", 1}, {"fs.romread", 1}, {"sys.modules", 1}, {"net.https", 3},
                                         {"client.install", 4}, {"client.map", 0}, {"client.start", 0}, {"client.end", 0}};
     LoadingView view = {.fraction = 0.35f, .status = "Installing PokeMMO", .detail = "212 of 498 MB", .version = "Prospero loader-8 (v0.8-dev)",
-                        .revision = "32920", .log_path = "/data/homebrew/PPSA27166/prospero.log", .steps = steps, .step_count = 9, .frame = 70};
+                        .revision = "32920", .log_path = "/data/homebrew/PPSA98001/prospero.log", .steps = steps, .step_count = 9, .frame = 70};
     struct {
         const char *name;
         void (*change)(LoadingView *);
@@ -139,7 +139,7 @@ int main(int argc, char **argv) {
         romsScan(folder, &scan);
         for (unsigned i = 0; i < scan.count; ++i) printf("rom: %s -> game %d: %s\n", scan.files[i].file, scan.files[i].game, scan.files[i].note);
         overlayBegin(W, H);
-        RomUploadInfo info = {.address = "192.168.1.20", .web = true, .ftp_port = 2121, .folder = "/data/homebrew/PPSA27166/roms/",
+        RomUploadInfo info = {.address = "192.168.1.20", .web = true, .ftp_port = 2121, .folder = "/data/homebrew/PPSA98001/roms/",
                               .receiving = "Receiving Pokemon - Black Version (USA, Europe).nds: 84 of 256 MB"};
         romScreenDraw(&scan, &info, true);
         overlayEnd();

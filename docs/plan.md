@@ -31,7 +31,7 @@ instead of another probe run (see Phase 2).
 
 Status: on a Linux PC the ported loader runs the unmodified client through GraalVM start-up, logging,
 configuration, LWJGL, SDL3 and libgdx, up to the graphics setup (no display yet); only `fork` and
-`posix_spawnattr_init` are refused. The PS5 build (`make loader`, title PPSA27166) adds the start-up
+`posix_spawnattr_init` are refused. The PS5 build (`make loader`, title PPSA98001) adds the start-up
 self-checks below and waits for its first console run.
 
 Port PokeMMO-NX's loader from Horizon/ARM64 to PS5/x86-64:
@@ -122,8 +122,8 @@ Release zip = title folder + installer (`installer/`), icon/backgrounds, ROM ins
 
 | What | On the console (FTP) | Seen by the title as | Written by |
 |------|----------------------|----------------------|------------|
-| Title | `/data/homebrew/PPSA27166/` | `/app0/` (read-only) | installer |
-| ROMs | `/data/homebrew/PPSA27166/roms/` | `/app0/roms/` (read-only) | installer (lists what is already there, offers to add more) |
+| Title | `/data/homebrew/PPSA98001/` | `/app0/` (read-only) | installer |
+| ROMs | `/data/homebrew/PPSA98001/roms/` | `/app0/roms/` (read-only) | installer (lists what is already there, offers to add more) |
 | Client slots, caches, config, logs | inside the title storage image | `/download0/` | the title |
 
 `/download0` is a storage image, not a folder FTP can browse, so logs go out over UDP. Probe check `fs.app0roms` confirms the ROM

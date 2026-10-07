@@ -13,7 +13,7 @@ int main(int argc, char **argv) {
     if (argc < 2) return 2;
     printf("existing FTP server: port %u\n", uploadDetectFtp());
     uploadSetDownloads(argc > 3 ? argv[3] : NULL, argc > 4 ? argv[4] : NULL);
-    uploadServersStart(argv[1], "/data/homebrew/PPSA27166/roms", true, changed);
+    uploadServersStart(argv[1], "/data/homebrew/PPSA98001/roms", true, changed);
     printf("http=%d ftp=%d ftp_port=%u\n", uploadStatus()->http_running, uploadStatus()->ftp_running, uploadStatus()->ftp_port);
     fflush(stdout);
     sleep(argc > 2 ? (unsigned)atoi(argv[2]) : 60);
