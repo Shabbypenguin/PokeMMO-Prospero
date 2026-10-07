@@ -934,19 +934,24 @@ static bool probePlace(const char *base, bool *survived) {
 }
 static void probePlaces(void) {
     mark("fs.places", RUNNING);
-    listFolder("fs.places", "/", NULL, 0);
-    listFolder("fs.places", "/mnt", NULL, 0);
-    static const char *const candidates[] = {"/data", "/user/data", "/user", "/mnt/usb0", "/mnt/usb1", "/mnt/ext0", "/mnt/ext1", "/temp0", "/temp",
-                                             "/av_contents", "/hostapp"};
+    // loader-34 showed the sandbox's / holds only download0, app0, dev, av_contents (not writable), system_tmp and one
+    // randomly named folder: loader-35 tries every folder there but the title's own.
+    static char roots[24][256];
+    unsigned root_count = listFolder("fs.places", "/", roots, 24);
+    if (root_count > 24) root_count = 24;
     unsigned writable = 0, survived_count = 0;
     char found[300] = "";
-    for (unsigned i = 0; i < sizeof(candidates) / sizeof(candidates[0]); ++i) {
+    for (unsigned i = 0; i < root_count; ++i) {
+        if (!strcmp(roots[i], "app0") || !strcmp(roots[i], "download0") || !strcmp(roots[i], "dev") || roots[i][0] == '.') continue;
+        char base[260];
+        snprintf(base, sizeof(base), "/%s", roots[i]);
+        listFolder("fs.places", base, NULL, 0);
         bool survived = false;
-        if (probePlace(candidates[i], &survived)) {
+        if (probePlace(base, &survived)) {
             ++writable;
-            if (strlen(found) + strlen(candidates[i]) + 2 < sizeof(found)) {
+            if (strlen(found) + strlen(base) + 2 < sizeof(found)) {
                 strcat(found, " ");
-                strcat(found, candidates[i]);
+                strcat(found, base);
             }
         }
         survived_count += survived;
