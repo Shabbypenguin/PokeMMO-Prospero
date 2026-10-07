@@ -41,7 +41,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define LOADER_MILESTONE "loader-32"
+#define LOADER_MILESTONE "loader-33"
 // ps5-opengl's app heap (malloc of the loader and of everything the client allocates with malloc): from direct memory.
 const size_t ps5_opengl_heap_size = 768u << 20;
 
@@ -1028,6 +1028,7 @@ static void *workMain(void *argument) {
         // The ports are free again before the game starts; marking them started keeps Square/Triangle from starting them after.
         if (atomic_exchange(&uploads_started, true)) uploadServersStop();
         applyDefaults();
+        sceKernelUsleep(1500000);  // loader-33: a quiet 1.5 s before the client starts (the controller still answers: Triangle)
         pthread_t game;
         pthread_attr_t attributes;
         pthread_attr_init(&attributes);
