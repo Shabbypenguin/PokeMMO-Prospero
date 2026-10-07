@@ -31,7 +31,7 @@ store. Everything the title keeps (client, ROMs, settings, log) lives in its own
 on the PS5, and run `install.bat` (Windows), `install.command` (macOS) or `./install.sh` (Linux). It asks for the
 console's IP address and FTP details and can upload your ROMs in the same go. See [installer/README.md](installer/README.md).
 
-Either way the title shows up as **PokeMMO Prospero** (`PPSA98001`; pre-beta builds add "(dev)" to the name).
+Either way the title shows up as **PokeMMO Prospero** (`PPSA98001`; earlier test builds were named "PokeMMO Prospero (dev)").
 
 ### 2. First start
 

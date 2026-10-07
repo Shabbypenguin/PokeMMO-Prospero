@@ -50,7 +50,7 @@ Expected today: the client starts (logback, config, LWJGL, SDL3, libgdx), then s
 Install with the installer from `dist/pokemmo-prospero-loader-installer.zip`, adding the client for this
 developer build: `python3 pokemmo_prospero_install.py --client PokeMMO-Client.zip` (the installer uploads the
 Linux part of the zip into the title folder as `client/`; release builds will download the client on the
-console instead). Then run `python3 tools/udplog.py --out loader.log` and start **PokeMMO Prospero (dev)**.
+console instead). Then run `python3 tools/udplog.py --out loader.log` and start **PokeMMO Prospero**.
 
 Since loader-8 the screen shows the project logo, one progress bar and a line of status ("Checking files",
 "Installing PokeMMO", "Starting PokeMMO"). It stays up until the client creates its OpenGL window, then hands the
