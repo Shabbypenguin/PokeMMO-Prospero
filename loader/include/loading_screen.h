@@ -26,6 +26,7 @@ typedef struct {
     const LoadingStep *steps;
     unsigned step_count;
     bool details;  // Triangle held
+    bool no_input;  // loader-32: the client is starting and the controller is not read: no "Hold Triangle" hint
     unsigned frame;
 } LoadingView;
 void loadingScreenDraw(const LoadingView *view);

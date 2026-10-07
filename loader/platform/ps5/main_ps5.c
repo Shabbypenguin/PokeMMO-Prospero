@@ -41,7 +41,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define LOADER_MILESTONE "loader-31"
+#define LOADER_MILESTONE "loader-32"
 // ps5-opengl's app heap (malloc of the loader and of everything the client allocates with malloc): from direct memory.
 const size_t ps5_opengl_heap_size = 768u << 20;
 
@@ -830,6 +830,7 @@ static void loadingView(LoadingView *view, LoadingStep *step_view, char *detail,
     *view = (LoadingView){.status = "Getting ready", .detail = detail, .version = version, .revision = client_revision,
                           .log_where = logWhere(), .steps = step_view, .step_count = STEP_COUNT, .frame = frame};
     detail[0] = 0;
+    view->no_input = atomic_load(&client_started_ns) != 0;  // from the client's start on, nothing reads the controller here
     static const char *const checks[] = {"fs.list.app0", "fs.list.roms", "fs.romread"};
     unsigned checked = 0;
     for (unsigned i = 0; i < 3; ++i) checked += stepState(checks[i]) != NOT_RUN && stepState(checks[i]) != RUNNING;

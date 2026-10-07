@@ -93,7 +93,7 @@ void loadingScreenDraw(const LoadingView *view) {
         if (view->detail && view->detail[0]) overlayTextCentered(OVERLAY_WIDTH / 2, 850, view->detail, 32, DIM);
         if (view->warning) overlayTextCentered(OVERLAY_WIDTH / 2, 910, view->warning, 30, AMBER);
     }
-    overlayText(48, 1020, "Hold \x04 for details", 28, view->problem ? SOFT : FAINT);
+    if (!view->no_input) overlayText(48, 1020, "Hold \x04 for details", 28, view->problem ? SOFT : FAINT);
     if (view->version) overlayText(OVERLAY_WIDTH - 48 - overlayTextWidth(view->version, 26), 990, view->version, 26, FAINT);
     if (view->revision && view->revision[0]) {
         char line[96];
