@@ -53,7 +53,7 @@ The ROM screen lists what was found, what is missing and what is not usable, and
 | **Installer** | Run the installer and answer yes to uploading ROMs. With an image install it talks to the title's own FTP server and only uploads ROMs. |
 
 The screen shows each file arriving and checks the folder again afterwards; press **Cross** to check again yourself.
-Uploading only works while the ROM screen is up; once the game starts, the page stays up only to download the log and settings. To add games
+The upload page and FTP server only run while the ROM screen is up, and stop when the game starts. To add games
 later, hold **Square** on the loading screen.
 
 ## ROMs
@@ -132,8 +132,8 @@ The cursor hides a few seconds after you stop touching the pad.
 
 | Install | Client, settings | ROMs | Log |
 |---------|------------------|------|-----|
-| Image | the title's storage | the title's storage | `http://<console IP>:8080/log` (from any browser, while the title runs) |
-| Folder | the title's storage | `/data/homebrew/PPSA98001/roms` | `/data/homebrew/PPSA98001/prospero.log` (FTP) |
+| Image | the title's storage | the title's storage | `http://<console IP>:8080/log` while the upload page runs; `/log-previous` is the start before |
+| Folder | the title's storage | `/data/homebrew/PPSA98001/roms` | `/data/homebrew/PPSA98001/prospero.log` (FTP); `prospero-previous.log` is the start before |
 
 The title's storage survives reboots and title updates, but **deleting or reinstalling the title erases it**: the
 client is downloaded again, ROMs must be uploaded again and the game's settings go back to the defaults. Your
@@ -150,7 +150,7 @@ if an update fails to start, the title goes back to the previous client by itsel
 | Red bar: "PokeMMO is not installed yet" | Check the console's internet connection, close the title (PS button) and start it again. |
 | ROM screen keeps coming back | Black or White isn't there or isn't readable. The screen says what each file is; unpack zipped files first. |
 | Web page or FTP won't connect | Use the address shown on screen, from the same network. Uploads (and the FTP server) only work before the game starts. |
-| "PokeMMO stopped while starting" | Start the title again. If it keeps happening, hold Triangle and save the full log it points to, then open an issue with it. |
+| "PokeMMO stopped while starting" or the game crashed | Start the title again. If it keeps happening, hold Square and save `http://<console IP>:8080/log-previous` (the crashed start's log), then open an issue with it. |
 
 ## For developers
 

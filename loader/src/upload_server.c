@@ -28,10 +28,9 @@
 
 #define BANNER "220 PokeMMO-Prospero ROM upload"
 static UploadStatus status;
-static char folder[256], ftp_path[256], log_file[256], settings_file[256];
+static char folder[256], ftp_path[256], log_file[256], previous_log_file[256], settings_file[256];
 static void (*on_change)(void);
 static _Atomic bool stopping;
-static _Atomic bool downloads_only;  // loader-28: the game runs; the page offers the log and the settings, uploads are off
 static int listeners[2] = {-1, -1};
 static pthread_t acceptors[2];
 static _Atomic int connections;
@@ -39,6 +38,12 @@ static _Atomic int connections;
 UploadStatus *uploadStatus(void) { return &status; }
 void uploadSetDownloads(const char *log_path, const char *settings_path) {
     snprintf(log_file, sizeof(log_file), "%s", log_path ? log_path : "");
+    // loader-29: the previous start's log, next to it ("prospero.log" -> "prospero-previous.log")
+    size_t length = strlen(log_file);
+    if (length > 4 && !strcmp(log_file + length - 4, ".log"))
+        snprintf(previous_log_file, sizeof(previous_log_file), "%.*s-previous.log", (int)(length - 4), log_file);
+    else
+        previous_log_file[0] = 0;
     snprintf(settings_file, sizeof(settings_file), "%s", settings_path ? settings_path : "");
 }
 
@@ -192,18 +197,12 @@ static void sendPage(int fd) {
             htmlEscape(escaped, sizeof(escaped), scan.files[i].note);
             n += snprintf(page + n, capacity - (size_t)n, "<p class=miss>%s: %s</p>", name, escaped);
         }
-    if (atomic_load(&downloads_only)) {
-        n += snprintf(page + n, capacity - (size_t)n,
-                      "<div class=box>The game is running, so uploading is off. To add ROMs, close the title and start it again, then hold "
-                      "Square on the loading screen.</div><p style='color:#8a9bbf'>For help with problems: "
-                      "<a style='color:#5aa0e8' href=/log>download the log</a> &middot; "
-                      "<a style='color:#5aa0e8' href=/settings>download the game's settings</a></p></main></body></html>");
-    } else
     n += snprintf(page + n, capacity - (size_t)n,
                   "<div class=box><label class=btn>Choose ROM files<input id=f type=file multiple accept='.nds,.gba' hidden></label>"
                   "<progress id=p value=0 max=1 hidden></progress><div id=log></div></div>"
                   "<p style='color:#8a9bbf'>The files go to the PS5 title's roms folder. When you are done, press Cross on the console.</p>"
                   "<p style='color:#8a9bbf'>For help with problems: <a style='color:#5aa0e8' href=/log>download the log</a> &middot; "
+                  "<a style='color:#5aa0e8' href=/log-previous>the previous start's log</a> (after a crash) &middot; "
                   "<a style='color:#5aa0e8' href=/settings>download the game's settings</a></p>"
                   "<script>const f=document.getElementById('f'),p=document.getElementById('p'),log=document.getElementById('log');"
                   "f.onchange=async()=>{for(const file of f.files){p.hidden=false;log.textContent='Sending '+file.name+'...';"
@@ -217,8 +216,8 @@ static void sendPage(int fd) {
     free(page);
 }
 // The log or the settings file, as an attachment.
-static void sendDownload(int fd, bool log) {
-    const char *path = log ? log_file : settings_file;
+static void sendDownload(int fd, int which /* 0 log, 1 previous log, 2 settings */) {
+    const char *path = which == 0 ? log_file : which == 1 ? previous_log_file : settings_file;
     int in = path[0] ? open(path, O_RDONLY) : -1;
     struct stat info;
     if (in < 0 || fstat(in, &info)) {
@@ -230,7 +229,7 @@ static void sendDownload(int fd, bool log) {
     snprintf(header, sizeof(header),
              "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Disposition: attachment; filename=\"%s\"\r\n"
              "Content-Length: %lld\r\nConnection: close\r\n\r\n",
-             log ? "prospero.log" : "main.properties", (long long)info.st_size);
+             which == 0 ? "prospero.log" : which == 1 ? "prospero-previous.log" : "main.properties", (long long)info.st_size);
     bool ok = sendText(fd, header);
     static _Thread_local char buffer[65536];
     for (long long left = info.st_size; ok && left > 0;) {  // a log still being written: only what was there when asked
@@ -265,9 +264,10 @@ static void serveHttp(int fd) {
     for (char *line = strstr(request, "\r\n"); line && line < end; line = strstr(line + 2, "\r\n"))
         if (!strncasecmp(line + 2, "Content-Length:", 15)) length = atoll(line + 17);
     if (!strcmp(method, "GET") && (!strcmp(target, "/") || !strncmp(target, "/?", 2))) { sendPage(fd); return; }
-    if (!strcmp(method, "GET") && (!strcmp(target, "/log") || !strcmp(target, "/settings"))) { sendDownload(fd, target[1] == 'l'); return; }
+    if (!strcmp(method, "GET") && !strcmp(target, "/log")) { sendDownload(fd, 0); return; }
+    if (!strcmp(method, "GET") && !strcmp(target, "/log-previous")) { sendDownload(fd, 1); return; }
+    if (!strcmp(method, "GET") && !strcmp(target, "/settings")) { sendDownload(fd, 2); return; }
     if (!strcmp(method, "PUT") && !strncmp(target, "/upload/", 8)) {
-        if (atomic_load(&downloads_only)) { sendStatus(fd, 403, "Forbidden", "the game is running: uploading is off"); return; }
         char name[1024];
         snprintf(name, sizeof(name), "%s", target + 8);
         urlDecode(name);
@@ -412,10 +412,6 @@ static void serveFtp(int control) {
         }
         *newline = 0;
         if (newline > buffer && newline[-1] == '\r') newline[-1] = 0;
-        if (atomic_load(&downloads_only)) {  // loader-28: a session from before the game started ends at its next command
-            reply(&f, "421 The game is running: uploading is off");
-            goto done;
-        }
         char line[1024];
         snprintf(line, sizeof(line), "%s", buffer);
         size_t used = (size_t)(newline + 1 - buffer);
@@ -566,23 +562,15 @@ void uploadServersStart(const char *rom_folder, const char *rom_ftp_path, bool w
         diagnosticsTrace("upload: %s listening on port %u", which ? "FTP" : "web page", port);
     }
 }
-static void stopOne(int which) {
-    if (listeners[which] < 0) return;
-    pthread_join(acceptors[which], NULL);
-    close(listeners[which]);
-    listeners[which] = -1;
-    atomic_store(which ? &status.ftp_running : &status.http_running, false);
-}
 void uploadServersStop(void) {
     atomic_store(&stopping, true);
-    for (int which = 0; which < 2; ++which) stopOne(which);
-}
-void uploadServersDownloadsOnly(const char *rom_folder) {
-    atomic_store(&downloads_only, true);  // new uploads are refused from here on
-    for (unsigned waited = 0; status.current[0] && waited < 600; ++waited) usleep(200000);  // one arriving now is finished (2 min at most)
-    uploadServersStop();  // both acceptors end (within a second); downloads already being sent carry on
-    uploadServersStart(rom_folder, ftp_path, false, on_change);  // the web page alone
-    diagnosticsTrace("upload: the web page stays up during the game for the log and the settings (uploads off)");
+    for (int which = 0; which < 2; ++which) {
+        if (listeners[which] < 0) continue;
+        pthread_join(acceptors[which], NULL);
+        close(listeners[which]);
+        listeners[which] = -1;
+        atomic_store(which ? &status.ftp_running : &status.http_running, false);
+    }
 }
 
 unsigned uploadDetectFtp(void) {

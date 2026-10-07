@@ -41,7 +41,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define LOADER_MILESTONE "loader-28"
+#define LOADER_MILESTONE "loader-29"
 // ps5-opengl's app heap (malloc of the loader and of everything the client allocates with malloc): from direct memory.
 const size_t ps5_opengl_heap_size = 768u << 20;
 
@@ -862,7 +862,8 @@ static void loadingView(LoadingView *view, LoadingStep *step_view, char *detail,
         if (title_writable)
             snprintf(advice, sizeof(advice), "%s", "Close the title with the PS button and start it again. If it keeps happening, send prospero.log from the title folder (FTP).");
         else
-            snprintf(advice, sizeof(advice), "Save the log now from a browser: %s. Then close the title with the PS button and start it again.", logWhere());
+            snprintf(advice, sizeof(advice), "Close the title with the PS button and start it again. If it keeps happening, hold Square and save "
+                                             "http://%s:%u/log-previous (this start's log) from a browser.", upload_address, (unsigned)UPLOAD_HTTP_PORT);
         view->advice = advice;
     }
     if (!view->warning && stepState("fs.romread") == INFO) {
@@ -997,9 +998,8 @@ static void *workMain(void *argument) {
     }
     if (slot_state.active && active_revision[0]) {
         waitForRequiredRom();
-        // loader-28: uploads end before the game starts (Square/Triangle cannot start them again); the web page stays up for the log.
-        atomic_store(&uploads_started, true);
-        uploadServersDownloadsOnly(ROM_FOLDER);
+        // The ports are free again before the game starts; marking them started keeps Square/Triangle from starting them after.
+        if (atomic_exchange(&uploads_started, true)) uploadServersStop();
         applyDefaults();
         pthread_t game;
         pthread_attr_t attributes;

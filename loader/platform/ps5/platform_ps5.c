@@ -84,9 +84,13 @@ static void logOpen(void) {
     }
     // The title folder when it is writable (a folder install, visible over FTP); else the title storage (an image install:
     // the upload web page offers it for download).
+    // loader-29: the previous start's log is kept next to it (prospero-previous.log), so that a crash can still be looked at after
+    // the title was started again.
+    rename("/app0/prospero.log", "/app0/prospero-previous.log");
     log_file = open("/app0/prospero.log", O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (log_file < 0) {
         mkdir("/download0/root", 0755);
+        rename("/download0/root/prospero.log", "/download0/root/prospero-previous.log");
         log_file = open("/download0/root/prospero.log", O_WRONLY | O_CREAT | O_TRUNC, 0644);
         if (log_file >= 0) log_path = "/download0/root/prospero.log";
     } else

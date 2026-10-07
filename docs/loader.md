@@ -118,8 +118,8 @@ it runs a web page on port 8080 (open `http://<console IP>:8080` in any browser 
 it, and pick the files) and,
 when no FTP server answered, a small FTP server on port 2121 that shows only the ROM folder
 (`/data/homebrew/PPSA98001/roms`). Both write nothing but files in that folder, show progress on the ROM screen and re-read
-the ROM list after each file. Before the game starts uploads end and the FTP server stops; since loader-28 the web page
-stays up during the game with only the log and the settings to download. The installer recognises the title's FTP server and only
+the ROM list after each file. Both stop before the game starts. Each start keeps the previous start's log as
+`prospero-previous.log` (loader-29); the page offers it as `/log-previous`, so a crash can be looked at after starting again. The installer recognises the title's FTP server and only
 uploads ROMs to it. `tools/upload_test.c` runs both servers on a PC.
 
 ### Title ID (loader-24)
