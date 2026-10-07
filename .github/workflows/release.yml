@@ -74,7 +74,8 @@ jobs:
           test -s dist/PPSA98001.ffpfsc
           test -s dist/pokemmo-prospero-loader-installer.zip
           grep -q "\"$VERSION\"" build/titles/PPSA98001/src/prospero_version.h || { echo "::error::the build does not carry $VERSION"; exit 1; }
-          (cd dist && sha256sum PPSA98001.ffpfsc pokemmo-prospero-loader-installer.zip > SHA256SUMS.txt)
+          # dist/ belongs to root (made inside the container): the sums go next to it, in the runner's own checkout.
+          (cd dist && sha256sum PPSA98001.ffpfsc pokemmo-prospero-loader-installer.zip) > SHA256SUMS.txt
 
       - name: Publish the release
         env:
@@ -85,4 +86,4 @@ jobs:
           flags=(--title "PokeMMO-Prospero $VERSION" --generate-notes --target "$GITHUB_SHA")
           [[ "$PRERELEASE" == "true" ]] && flags+=(--prerelease)
           gh release create "$VERSION" "${flags[@]}" \
-            dist/PPSA98001.ffpfsc dist/pokemmo-prospero-loader-installer.zip dist/SHA256SUMS.txt
+            dist/PPSA98001.ffpfsc dist/pokemmo-prospero-loader-installer.zip SHA256SUMS.txt
