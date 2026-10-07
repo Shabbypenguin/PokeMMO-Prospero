@@ -7,9 +7,9 @@
 # native test builder uses (heap size, malloc wraps, linker script, AGC import stubs) so we stay on the
 # path that project validated on hardware.
 #
-#   scripts/build-title.sh --title-id PPSA27165 --name "PokeMMO Probe" --sources probe \
+#   scripts/build-title.sh --title-id PPSA98001 --name "PokeMMO Prospero" --sources loader/src \
 #       [--sources DIR]... [--include DIR]... [--zlib] [--assets DIR] [--heap-mib 256] [--download-mib 256]
-#       [--content-suffix PROBE] [--define NAME=VALUE]... [--branding DIR]
+#       [--content-suffix LOADER] [--define NAME=VALUE]... [--branding DIR]
 #
 # --sources DIR   every .c/.cpp in DIR is compiled (C11 / C++20, -O2) together with the ps5-opengl glue (repeatable).
 # --include DIR   headers in DIR are visible to every source (repeatable).
@@ -20,7 +20,7 @@
 set -euo pipefail
 
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-template=${PS5_NATIVE_APP_TEMPLATE:?run inside the build environment: ../pokemmo-ps5-buildenv/ps5env make probe}
+template=${PS5_NATIVE_APP_TEMPLATE:?run inside the build environment: ../pokemmo-ps5-buildenv/ps5env make loader}
 sdk=${PS5_PAYLOAD_SDK:?}
 prefix=${PS5_OPENGL_PREFIX:?}
 glsrc=${PS5_OPENGL_SOURCE:?}

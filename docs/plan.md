@@ -18,9 +18,11 @@ Client revision 32920, `bin/linux/x64/PokeMMO` (re-run `make analyze` on every r
 | GLSL | legacy (no `#version`, `gl_FragColor`, `texture2D`), one `#version 130` | needs a compatibility context |
 | Code generation | only libffi closure trampolines (LWJGL callbacks) | small exec pool, or prebuilt trampolines |
 
-## Phase 1b — hardware probe (done)
+## Phase 1b — hardware probe (done, retired)
 
-`probe/` answers on firmware 12.40: compatibility context + legacy GLSL + blending on ps5-opengl,
+The probe title was removed once the loader covered everything it tested; its source is at git tag `probe-final`.
+
+The probe answered on firmware 12.40: compatibility context + legacy GLSL + blending on ps5-opengl,
 `%fs:0x28` stability, thread stack control, address-space reservations, flexible vs direct memory (and direct memory
 mapped at a fixed address inside a reservation, how GraalVM commits its heap), `/download0`,
 network, and which executable-memory route works. probe-2 and probe-3 settled graphics, memory, executable memory and

@@ -177,9 +177,8 @@ supplies the Linux libc, SDL3, OpenAL, EGL/GL and GTK pieces it expects, on top 
 | `installer/` | Windows/macOS/Linux installer: uploads a title over FTP and optionally your ROMs ([README](installer/README.md)) |
 | `assets/` | branding and the default game settings |
 | `scripts/build-title.sh` | assembles a native PS5 title (FSELF + `libc.prx` + `sce_sys`) that links ps5-opengl |
-| `probe/` | hardware probe title: checks the platform behaviors the loader depends on ([docs](docs/probe.md)) |
 | `tools/` | client download and analysis, branding generator, UDP log receiver, test servers |
-| `docs/` | [plan](docs/plan.md), [loader](docs/loader.md), [probe](docs/probe.md) |
+| `docs/` | [plan](docs/plan.md), [loader](docs/loader.md); the retired hardware probe is at git tag `probe-final` |
 
 ## Transparency
 

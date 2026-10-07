@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Builds the probe and loader titles inside the image published by the pokemmo-ps5-buildenv repository
+# Builds the title (folder zip, installer zip and .ffpfsc image) inside the image published by the pokemmo-ps5-buildenv repository
 # (same owner, see that repo's image workflow). The PokeMMO client is never downloaded here.
 name: build
 
@@ -13,7 +13,7 @@ permissions:
   packages: read
 
 jobs:
-  probe:
+  title:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -30,28 +30,27 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
           docker pull "$image"
 
-      - name: Build probe and loader titles and their zips
-        run: docker run --rm -v "$PWD:/work" -w /work "$IMAGE" bash -c "make package-probe && make package-loader"
+      - name: Build the title, its installer zip and its image
+        run: docker run --rm -v "$PWD:/work" -w /work "$IMAGE" bash -c "make package-loader && make image-loader"
 
       - name: Check title contents
         run: |
           set -euo pipefail
-          for title in build/titles/PPSA27165/dist/PPSA27165 build/titles/PPSA98001/dist/PPSA98001; do
-            for file in eboot.bin sce_module/libc.prx sce_sys/param.json; do
-              test -s "$title/$file"
-            done
+          for file in eboot.bin sce_module/libc.prx sce_sys/param.json; do
+            test -s "build/titles/PPSA98001/dist/PPSA98001/$file"
           done
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: pokemmo-prospero-probe
-          path: dist/pokemmo-prospero-probe-installer.zip
-          if-no-files-found: error
+          test -s dist/PPSA98001.ffpfsc
 
       - uses: actions/upload-artifact@v4
         with:
           name: pokemmo-prospero-loader
           path: dist/pokemmo-prospero-loader-installer.zip
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PPSA98001-ffpfsc
+          path: dist/PPSA98001.ffpfsc
           if-no-files-found: error
 
   # The same loader on Linux, run against nothing but itself: catches build breaks of the shared adapters (the client is never

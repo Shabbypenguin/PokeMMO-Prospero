@@ -50,7 +50,7 @@ and HeartGold/SoulSilver and Platinum (`.nds`) add regions; see PokeMMO's own se
 ## Without questions (scripts, CI)
 
 ```bash
-python3 pokemmo_prospero_install.py --yes --package pokemmo-prospero-probe-PPSA27165.zip \
+python3 pokemmo_prospero_install.py --yes --package pokemmo-prospero-loader-PPSA98001.zip \
     --host 192.168.1.50 --port 2121 --user anonymous --password "" --roms ~/roms
 ```
 

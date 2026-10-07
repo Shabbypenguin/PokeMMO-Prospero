@@ -44,7 +44,7 @@ Expected today: the client starts (logback, config, LWJGL, SDL3, libgdx), then s
 ## Running it on the console (milestone 1)
 
 ```bash
-../pokemmo-ps5-buildenv/ps5env make package-loader PROBE_LOG_HOST=<your PC's IP>
+../pokemmo-ps5-buildenv/ps5env make package-loader LOG_HOST=<your PC's IP>
 ```
 
 Install with the installer from `dist/pokemmo-prospero-loader-installer.zip`, adding the client for this

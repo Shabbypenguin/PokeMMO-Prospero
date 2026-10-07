@@ -19,8 +19,8 @@ What this repository takes from it today:
 |-------|---------------------|------|
 | The overall design (ELF loader + libc shim + virtual libraries) | [docs/plan.md](docs/plan.md), [docs/loader.md](docs/loader.md) | design and code (below) |
 | Which runtime libraries the client opens and must be provided virtually | [docs/plan.md](docs/plan.md), `tools/client-baseline.txt` | knowledge, re-derived from the client with `tools/analyze_client.py` |
-| The client's OpenGL context request (desktop GL 2.1, no profile mask) | `probe/probe.c` (`glOpen`) | behavior reproduced, code written from scratch |
-| The libffi closure interception idea (LWJGL callbacks need executable trampolines) | [docs/plan.md](docs/plan.md), `probe/probe.c` (exec checks) | design, no code |
+| The client's OpenGL context request (desktop GL 2.1, no profile mask) | `probe/probe.c` (`glOpen`; git tag `probe-final`) | behavior reproduced, code written from scratch |
+| The libffi closure interception idea (LWJGL callbacks need executable trampolines) | [docs/plan.md](docs/plan.md), `probe/probe.c` (exec checks; git tag `probe-final`) | design, no code |
 | Downloading the client at build time instead of shipping it | `tools/fetch_client.py` | adapted from `tools/fetch_client.py` |
 | JVM launch options `-XX:MaxHeapSize=640m -XX:MaxNewSize=128m` | [docs/plan.md](docs/plan.md) (Phase 2) | values |
 | Input design: controller as an SDL3 gamepad with face buttons by printed label, a short gamepad name (long ones make the client's Android theme lag), R3 for the keyboard, L3 for a stick cursor | [docs/plan.md](docs/plan.md) (Phase 4) | design, no code |
