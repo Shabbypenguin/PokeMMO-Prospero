@@ -159,7 +159,8 @@ Google Drive:
 - **Restoring:** after installing the title again, answer yes to the question and sign in: the ROMs and every profile's
   settings come back before the game starts.
 
-Anyone with access to that Google account can read the backed-up settings and logins of every profile on the console.
+Anyone with access to that Google account can read the backed-up settings and logins of every profile on the console. What the
+backup accesses: [shabbypenguin.github.io/PokeMMO-Prospero/privacy.html](https://shabbypenguin.github.io/PokeMMO-Prospero/privacy.html).
 
 ## Troubleshooting
 

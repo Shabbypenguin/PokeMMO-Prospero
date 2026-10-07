@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy: what PokeMMO Prospero accesses</title>
+<meta name="description" content="What the PokeMMO Prospero PS5 title accesses, including its optional Google Drive backup, and what it does with it.">
+<link rel="icon" href="favicon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <header>
+    <a href="index.html"><img src="icon.png" alt="PokeMMO Prospero icon"></a>
+    <div>
+      <h1>Privacy</h1>
+      <p class="tagline">What PokeMMO Prospero accesses, and what it does with it. Last updated 7 October 2026.</p>
+    </div>
+  </header>
+
+  <div class="panel">
+    <p><strong>In short:</strong> the title has no servers of its own and collects nothing. Everything it keeps stays on
+    your PS5, or, if you turn on the backup, in a folder of your own Google Drive that only you can reach.</p>
+  </div>
+
+  <h2>Google Drive backup (optional)</h2>
+  <p>When you sign in with Google from the title, it asks for one permission:</p>
+  <table>
+    <tr><th>Permission</th><th>What it allows</th></tr>
+    <tr><td><code>https://www.googleapis.com/auth/drive.file</code></td>
+        <td>Seeing, creating, changing and deleting <strong>only the files the title itself created</strong> in your Drive.
+        It cannot see, read or change any other file, folder or setting in your Google account.</td></tr>
+  </table>
+
+  <p>With it, the title keeps a folder called <code>PokeMMO Prospero</code> in your Drive, containing:</p>
+  <table>
+    <tr><th>File</th><th>What it is</th><th>Why</th></tr>
+    <tr><td><code>roms/&lt;file&gt;</code></td><td>The game ROM files you put on the console (<code>.nds</code>, <code>.gba</code>)</td>
+        <td>So they can be put back after the title is installed again</td></tr>
+    <tr><td><code>profile-&lt;number&gt;.tar</code></td><td>One PS5 profile's PokeMMO settings folder: game options, controls, and
+        PokeMMO's remembered login if you chose "remember me" in the game</td>
+        <td>So each profile's settings and login come back after a reinstall</td></tr>
+  </table>
+  <p>The number in a profile file's name is the console's internal number for that PS5 profile; it identifies nothing
+  outside your console.</p>
+
+  <h2>What the title does with it</h2>
+  <ul>
+    <li>Data goes only between your PS5 and your own Google Drive, directly. It is never sent to the project, its developers
+    or anyone else, and there is no analytics, advertising or tracking of any kind.</li>
+    <li>The title reads these files back only to restore them onto your console when you ask it to.</li>
+    <li>It never deletes your ROM backups. It replaces a profile's settings file with a newer copy when those settings
+    change.</li>
+    <li>The sign-in is kept only on the console, in the title's own storage, to keep the backup running. Installing the
+    title again removes it.</li>
+    <li>Anyone who can open your Google Drive can see this folder, including the settings and remembered PokeMMO logins of
+    every profile backed up from your console. Only turn the backup on with a Google account you trust with that.</li>
+  </ul>
+  <p>PokeMMO Prospero's use and transfer of information received from Google APIs adheres to the
+  <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>,
+  including the Limited Use requirements.</p>
+
+  <h2>Removing your data</h2>
+  <ul>
+    <li>Delete the <code>PokeMMO Prospero</code> folder in Google Drive to remove the backup.</li>
+    <li>Remove the title's access at <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.</li>
+    <li>Delete the title on the PS5 to remove everything it keeps there.</li>
+  </ul>
+
+  <h2>Everything else the title connects to</h2>
+  <table>
+    <tr><th>Where</th><th>Why</th></tr>
+    <tr><td>PokeMMO's download server</td><td>To download and update the official PokeMMO client</td></tr>
+    <tr><td>PokeMMO's game servers</td><td>The game itself: your account and play are between you and PokeMMO, under their terms</td></tr>
+    <tr><td>Your own network only</td><td>A web page and FTP server on the console, while its ROM screen is up, so you can send it
+        your ROMs from a phone or computer</td></tr>
+  </table>
+
+  <h2>Questions</h2>
+  <p>Open an issue at <a href="https://github.com/Shabbypenguin/PokeMMO-Prospero/issues">github.com/Shabbypenguin/PokeMMO-Prospero/issues</a>.
+  The title's source code is public, so everything on this page can be checked there.</p>
+
+  <footer>
+    <p><a href="index.html">PokeMMO Prospero</a> · Not affiliated with PokeMMO, Nintendo, The Pokémon Company, Sony or Google.</p>
+  </footer>
+</main>
+</body>
+</html>
