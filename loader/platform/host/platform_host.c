@@ -198,11 +198,12 @@ struct PlatformHttp {
     char *body;        // bytes read past the headers, not yet returned
     size_t body_size;
 };
-PlatformHttp *platformHttpOpen(const char *url, bool head, int64_t range_start, int64_t range_end, int *status, char *error, size_t error_size) {
+PlatformHttp *platformHttpSend(const char *method, const char *url, const PlatformHttpHeader *headers, unsigned header_count, const void *body,
+                               size_t body_size, int *status, char *error, size_t error_size) {
     *status = 0;
-    char host[256], path[1024] = "/";
+    char host[256], path[2048] = "/";
     unsigned port = 80;
-    if (sscanf(url, "http://%255[^:/]:%u%1023s", host, &port, path) < 2 && sscanf(url, "http://%255[^:/]%1023s", host, path) < 1) {
+    if (sscanf(url, "http://%255[^:/]:%u%2047s", host, &port, path) < 2 && sscanf(url, "http://%255[^:/]%2047s", host, path) < 1) {
         snprintf(error, error_size, "only http:// addresses on a PC");
         return NULL;
     }
@@ -223,10 +224,23 @@ PlatformHttp *platformHttpOpen(const char *url, bool head, int64_t range_start, 
         return NULL;
     }
     freeaddrinfo(list);
-    char request[1400], range[80] = "";
-    if (range_end >= 0) snprintf(range, sizeof(range), "Range: bytes=%lld-%lld\r\n", (long long)range_start, (long long)range_end);
-    int length = snprintf(request, sizeof(request), "%s %s HTTP/1.0\r\nHost: %s\r\n%sUser-Agent: PokeMMO-Prospero\r\n\r\n", head ? "HEAD" : "GET", path, host, range);
-    if (write(fd, request, (size_t)length) != length) {
+    size_t capacity = 4096 + strlen(path);
+    for (unsigned i = 0; i < header_count; ++i) capacity += strlen(headers[i].name) + strlen(headers[i].value) + 4;
+    char *request = malloc(capacity);
+    char host_header[300];  // the port too, when not 80: servers build absolute addresses (upload sessions) from it
+    snprintf(host_header, sizeof(host_header), port == 80 ? "%s" : "%s:%u", host, port);
+    int length = snprintf(request, capacity, "%s %s HTTP/1.0\r\nHost: %s\r\nUser-Agent: PokeMMO-Prospero\r\n", method, path, host_header);
+    for (unsigned i = 0; i < header_count; ++i) length += snprintf(request + length, capacity - (size_t)length, "%s: %s\r\n", headers[i].name, headers[i].value);
+    if (body_size || strcmp(method, "GET")) length += snprintf(request + length, capacity - (size_t)length, "Content-Length: %zu\r\n", body_size);
+    length += snprintf(request + length, capacity - (size_t)length, "\r\n");
+    bool sent = write(fd, request, (size_t)length) == length;
+    free(request);
+    for (size_t done = 0; sent && done < body_size;) {
+        ssize_t wrote = write(fd, (const char *)body + done, body_size - done);
+        if (wrote <= 0) sent = false;
+        else done += (size_t)wrote;
+    }
+    if (!sent) {
         snprintf(error, error_size, "send failed");
         close(fd);
         return NULL;
@@ -256,6 +270,12 @@ PlatformHttp *platformHttpOpen(const char *url, bool head, int64_t range_start, 
     char value[64];
     if (platformHttpHeader(h, "Content-Length", value, sizeof(value))) h->length = atoll(value);
     return h;
+}
+PlatformHttp *platformHttpOpen(const char *url, bool head, int64_t range_start, int64_t range_end, int *status, char *error, size_t error_size) {
+    char range[80];
+    PlatformHttpHeader header = {"Range", range};
+    if (range_end >= 0) snprintf(range, sizeof(range), "bytes=%lld-%lld", (long long)range_start, (long long)range_end);
+    return platformHttpSend(head ? "HEAD" : "GET", url, &header, range_end >= 0 ? 1 : 0, NULL, 0, status, error, error_size);
 }
 int64_t platformHttpLength(PlatformHttp *h) { return h->length; }
 bool platformHttpHeader(PlatformHttp *h, const char *name, char *value, size_t size) {

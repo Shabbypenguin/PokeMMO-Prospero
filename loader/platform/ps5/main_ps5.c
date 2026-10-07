@@ -20,6 +20,7 @@
 #include "slots.h"
 #include "updater.h"
 #include "upload_server.h"
+#include "cloud.h"
 #include "prospero_version.h"  // PROSPERO_VERSION, PROSPERO_TITLE_ID (generated at build time)
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
@@ -41,7 +42,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define LOADER_MILESTONE "loader-35"
+#define LOADER_MILESTONE "loader-36"
 // ps5-opengl's app heap (malloc of the loader and of everything the client allocates with malloc): from direct memory.
 const size_t ps5_opengl_heap_size = 768u << 20;
 
@@ -73,7 +74,7 @@ typedef struct {
 // loader-15: the system-module and HTTPS probes gave way to the client updater (client.update). loader-35: the installer and its
 // developer copy of the client (client.dev) are gone; the updater is the only way the client arrives.
 static Step steps[] = {
-    {"fs.list.app0", NOT_RUN}, {"fs.list.roms", NOT_RUN}, {"fs.romread", NOT_RUN},  {"fs.places", NOT_RUN},
+    {"fs.list.app0", NOT_RUN}, {"fs.list.roms", NOT_RUN}, {"fs.romread", NOT_RUN},
     {"client.update", NOT_RUN}, {"client.map", NOT_RUN},  {"client.start", NOT_RUN}, {"client.end", NOT_RUN},
 };
 #define STEP_COUNT (sizeof(steps) / sizeof(*steps))
@@ -191,7 +192,16 @@ static char upload_address[32];
 static unsigned existing_ftp_port;
 static _Atomic bool uploads_started;
 static void scanRoms(void);
-static void romsChanged(void) { scanRoms(); }
+// loader-36: the Google Drive backup's screens and requests (the work itself is further down, with cloud.c).
+enum { CLOUD_SCREEN_NONE, CLOUD_SCREEN_ASK, CLOUD_SCREEN_SIGNIN };
+static pthread_mutex_t cloud_lock = PTHREAD_MUTEX_INITIALIZER;
+static _Atomic int cloud_screen, cloud_answer;  // ASK: 1 sign in, 2 not now
+static _Atomic bool cloud_cancel, cloud_signin_requested, cloud_roms_dirty = true, cloud_restoring;
+static _Atomic uint64_t rom_changed_ns;  // loader-36: when a file last arrived (the Drive backup waits until uploads settle)
+static void romsChanged(void) {
+    scanRoms();
+    atomic_store(&rom_changed_ns, platformMonotonicNs());
+}
 static void startUploads(void) {
     if (atomic_exchange(&uploads_started, true)) return;
     // A running FTP payload is only of use when it can reach the ROM folder (a folder install).
@@ -518,11 +528,13 @@ static char player_label[96];  // "Playing as <name>", "" when unknown
 static char settings_path[240], settings_copy[240], defaults_mark[240];
 #define SETTINGS settings_path
 #define SETTINGS_COPY settings_copy
+static char player_folder[64] = "default";  // the profile id: its backup is profile-<id>.tar
 static void choosePlayer(void) {
     int id = -1;
     char name[64] = "", folder[64] = "default";
     if (platformUser(&id, name, sizeof(name))) snprintf(folder, sizeof(folder), "%d", id);
     snprintf(player_config, sizeof(player_config), "%s/users/%s/config", ROOT, folder);
+    snprintf(player_folder, sizeof(player_folder), "%s", folder);
     snprintf(settings_path, sizeof(settings_path), "%s/main.properties", player_config);
     snprintf(defaults_mark, sizeof(defaults_mark), "%s/.prospero-defaults", player_config);
     snprintf(settings_copy, sizeof(settings_copy), "/app0/settings/%s/main.properties", folder);
@@ -665,6 +677,7 @@ static void acquireDisplay(void) {
     while (!atomic_load(&screen_released)) sceKernelUsleep(5000);
 }
 static void drawLoadingInGame(void);
+static void cloudBackupAtExit(void);
 static void *gameThread(void *argument) {
     (void)argument;
     // This project's SDL3, EGL/GLX, OpenAL and GTK (the file chooser), adapted from PokeMMO-NX.
@@ -705,6 +718,7 @@ static void *gameThread(void *argument) {
     say("client: %s%s", ok ? "ended normally" : "ended: ", ok ? "" : gameFailure());
     if (ok) {  // loader-21: the player chose Exit in the game: the title closes and the console goes back to the home screen
         backupSettings();
+        cloudBackupAtExit();
         say("client: exited from the game: closing the title");
         platformQuit();
     }
@@ -828,6 +842,18 @@ static void loadingView(LoadingView *view, LoadingStep *step_view, char *detail,
                                              "http://%s:%u/log-previous (this start's log) from a browser.", upload_address, (unsigned)UPLOAD_HTTP_PORT);
         view->advice = advice;
     }
+    if (atomic_load(&cloud_screen) == CLOUD_SCREEN_ASK) {  // loader-36: a fresh install
+        view->question = "Restore your ROMs and settings from Google Drive?";
+        view->choices = "\x01 Sign in to Google Drive          \x02 Not now";
+    } else if (atomic_load(&cloud_restoring)) {
+        CloudStatus *cloud = cloudStatus();
+        uint64_t done = atomic_load(&cloud->done), total = atomic_load(&cloud->total);
+        view->status = "Restoring from Google Drive";
+        if (total) {
+            view->fraction = 0.08f * (float)((double)done / (double)total);
+            snprintf(detail, detail_size, "%llu of %llu MB", (unsigned long long)(done >> 20), (unsigned long long)(total >> 20));
+        }
+    }
     uint64_t offer = atomic_load(&rom_offer_deadline_ns), now = platformMonotonicNs();
     if (offer && now < offer && !view->problem) {  // the 5-second ROM offer, in place of the status (gone once it ends)
         static char question[96], choices[96];
@@ -866,8 +892,28 @@ static void drawScreen(unsigned frame) {
         if (pressed & PLATFORM_PAD_CROSS) atomic_store(&update_choice, CHOICE_DOWNLOAD);
         if (pressed & PLATFORM_PAD_CIRCLE) atomic_store(&update_choice, CHOICE_SKIP);
     }
+    int cloud_mode = atomic_load(&cloud_screen);
+    if (cloud_mode == CLOUD_SCREEN_SIGNIN && !view.details) {  // loader-36: over everything else while it runs
+        if (pressed & PLATFORM_PAD_CIRCLE) atomic_store(&cloud_cancel, true);
+        CloudStatus *cloud = cloudStatus();
+        int phase = atomic_load(&cloud->phase);
+        CloudSignInView sign_in = {.url = phase == CLOUD_CODE || phase == CLOUD_FAILED ? cloud->verify_url : NULL,
+                                   .code = phase == CLOUD_CODE || phase == CLOUD_FAILED ? cloud->user_code : NULL,
+                                   .state = phase == CLOUD_CODE     ? "Waiting for you to approve on your phone..."
+                                            : phase == CLOUD_FAILED ? cloud->error
+                                                                    : "Getting a code from Google...",
+                                   .failed = phase == CLOUD_FAILED};
+        cloudSignInDraw(&sign_in);
+        overlayEnd();
+        return;
+    }
+    if (cloud_mode == CLOUD_SCREEN_ASK && !atomic_load(&cloud_answer)) {
+        if (pressed & PLATFORM_PAD_CROSS) atomic_store(&cloud_answer, 1);
+        if (pressed & PLATFORM_PAD_CIRCLE) atomic_store(&cloud_answer, 2);
+    }
     int mode = atomic_load(&rom_mode);
     if (mode != ROM_SCREEN_NONE && !atomic_load(&rom_choice) && (pressed & PLATFORM_PAD_CROSS)) atomic_store(&rom_choice, 1);
+    if (mode != ROM_SCREEN_NONE && (pressed & PLATFORM_PAD_SQUARE) && !cloudSignedIn()) atomic_store(&cloud_signin_requested, true);
     uint64_t offer = atomic_load(&rom_offer_deadline_ns);
     if (offer && platformMonotonicNs() < offer && (pressed & PLATFORM_PAD_SQUARE)) atomic_store(&rom_offer_taken, true);
     if (!view.details && mode != ROM_SCREEN_NONE) {
@@ -885,13 +931,25 @@ static void drawScreen(unsigned frame) {
                 snprintf(receiving, sizeof(receiving), "Receiving %s: %llu MB", upload->current, (unsigned long long)(done >> 20));
         } else if (atomic_load(&upload->received))
             snprintf(receiving, sizeof(receiving), "%u file(s) received.", atomic_load(&upload->received));
+        char cloud_line[360];  // loader-36
+        CloudStatus *cloud = cloudStatus();
+        if (!cloudSignedIn())
+            snprintf(cloud_line, sizeof(cloud_line), "%s", "\x03 Back up your ROMs and settings to Google Drive");
+        else if (atomic_load(&cloud->phase) == CLOUD_BUSY && atomic_load(&cloud->total))
+            snprintf(cloud_line, sizeof(cloud_line), "Google Drive: %s, %llu of %llu MB", cloud->activity,
+                     (unsigned long long)(atomic_load(&cloud->done) >> 20), (unsigned long long)(atomic_load(&cloud->total) >> 20));
+        else if (atomic_load(&cloud->phase) == CLOUD_FAILED)
+            snprintf(cloud_line, sizeof(cloud_line), "Google Drive: %s (tried again later)", cloud->error);
+        else
+            snprintf(cloud_line, sizeof(cloud_line), "%s", atomic_load(&cloud_roms_dirty) ? "Google Drive: new ROMs go up in a few seconds" : "Google Drive: backed up");
         RomUploadInfo info = {.address = upload_address,
                               .web = atomic_load(&upload->http_running),
                               .ftp_port = title_writable && existing_ftp_port ? existing_ftp_port
                                           : atomic_load(&upload->ftp_running)    ? atomic_load(&upload->ftp_port)
                                                                                  : 0,
                               .folder = title_writable && existing_ftp_port ? ROM_FTP_PATH "/" : NULL,  // loader-35
-                              .receiving = receiving};
+                              .receiving = receiving,
+                              .cloud = cloud_line};
         romScreenDraw(&scan, &info, mode);
         overlayEnd();
         return;
@@ -900,99 +958,83 @@ static void drawScreen(unsigned frame) {
     overlayEnd();
 }
 
-// loader-34 probe: is there a place outside the title storage that the title can write and that outlives a reinstall? The
-// title storage (/download0) is wiped whenever the title is installed again; /data is not visible to an image install (loader-33:
-// ENOENT). Every folder found at / and /mnt is listed, and each candidate gets a marker file that the next start (after a
-// reinstall) looks for. Nothing is moved yet.
-static bool probePlace(const char *base, bool *survived) {
-    char folder[200], path[240], text[160], back[160] = "";
-    struct stat info;
-    if (stat(base, &info)) {
-        say("places: %s not visible (errno %d)", base, errno);
-        return false;
-    }
-    snprintf(folder, sizeof(folder), "%s/pokemmo-prospero", base);
-    errno = 0;
-    int made = mkdir(folder, 0755);
-    int made_errno = made ? errno : 0;
-    snprintf(path, sizeof(path), "%s/marker.txt", folder);
-    int fd = open(path, O_RDONLY);
-    ssize_t got = fd >= 0 ? read(fd, back, sizeof(back) - 1) : -1;
-    if (fd >= 0) close(fd);
-    back[got > 0 ? got : 0] = 0;
-    back[strcspn(back, "\r\n")] = 0;
-    *survived = got > 0;
-    int length = snprintf(text, sizeof(text), "PokeMMO-Prospero %s marker, written %llu s after boot; safe to delete.\n", LOADER_MILESTONE,
-                          (unsigned long long)(platformMonotonicNs() / 1000000000ull));
-    fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    bool written = fd >= 0 && write(fd, text, (size_t)length) == length;
-    int write_errno = fd >= 0 ? 0 : errno;
-    if (fd >= 0) close(fd);
-    say("places: %s: mkdir %s (errno %d), write %s (errno %d)%s%s", base, made == 0 ? "made" : made_errno == EEXIST ? "there" : "failed", made_errno,
-        written ? "ok" : "failed", write_errno, *survived ? "; marker from before found: " : "", *survived ? back : "");
-    return written;
+// ---- Google Drive backup (loader-36, cloud.c) -------------------------------------------------------------------------------------------
+// One Google account per console. A fresh install (no ROMs, not signed in, not declined) asks whether to restore; the ROM screen
+// offers the sign-in (Square). Signed in: new ROMs are backed up once uploads settle, the playing profile's settings every minute
+// when they changed and when the game exits. All Drive work runs under one lock (cloud.c keeps one token and its folders).
+static bool cloudSignInScreen(void) {
+    atomic_store(&cloud_cancel, false);
+    atomic_store(&cloud_screen, CLOUD_SCREEN_SIGNIN);
+    bool ok = cloudSignIn(&cloud_cancel);
+    if (!ok && !atomic_load(&cloud_cancel))  // the reason stays up until Circle
+        while (!atomic_load(&cloud_cancel)) sceKernelUsleep(20000);
+    atomic_store(&cloud_screen, CLOUD_SCREEN_NONE);
+    say("cloud: sign-in %s", ok ? "done" : "not done");
+    return ok;
 }
-static void probePlaces(void) {
-    mark("fs.places", RUNNING);
-    // loader-34 showed the sandbox's / holds only download0, app0, dev, av_contents (not writable), system_tmp and one
-    // randomly named folder: loader-35 tries every folder there but the title's own.
-    static char roots[24][256];
-    unsigned root_count = listFolder("fs.places", "/", roots, 24);
-    if (root_count > 24) root_count = 24;
-    unsigned writable = 0, survived_count = 0;
-    char found[300] = "";
-    for (unsigned i = 0; i < root_count; ++i) {
-        if (!strcmp(roots[i], "app0") || !strcmp(roots[i], "download0") || !strcmp(roots[i], "dev") || roots[i][0] == '.') continue;
-        char base[260];
-        snprintf(base, sizeof(base), "/%s", roots[i]);
-        listFolder("fs.places", base, NULL, 0);
-        bool survived = false;
-        if (probePlace(base, &survived)) {
-            ++writable;
-            if (strlen(found) + strlen(base) + 2 < sizeof(found)) {
-                strcat(found, " ");
-                strcat(found, base);
-            }
-        }
-        survived_count += survived;
+static void offerRestore(void) {
+    if (cloudSignedIn() || cloudDeclined() || rom_scan.count > 0) return;
+    say("cloud: a fresh install: asking whether to restore from Google Drive");
+    atomic_store(&cloud_answer, 0);
+    atomic_store(&cloud_screen, CLOUD_SCREEN_ASK);
+    while (!atomic_load(&cloud_answer)) sceKernelUsleep(20000);
+    atomic_store(&cloud_screen, CLOUD_SCREEN_NONE);
+    if (atomic_load(&cloud_answer) == 2) {
+        cloudDecline();
+        say("cloud: not now (asked again when the title is installed again)");
+        return;
     }
-    say("places: %u writable:%s; %u with a marker from an earlier start", writable, writable ? found : " none", survived_count);
-    mark("fs.places", writable ? PASS : INFO);
+    pthread_mutex_lock(&cloud_lock);
+    if (cloudSignInScreen()) {
+        atomic_store(&cloud_restoring, true);
+        bool roms = cloudSyncRoms(ROM_FOLDER, false, true);
+        unsigned profiles = 0;
+        bool settings = cloudRestoreProfiles(ROOT "/users", &profiles);
+        atomic_store(&cloud_restoring, false);
+        say("cloud: restore: ROMs %s, %u profile(s)%s", roms ? "done" : "FAILED", profiles, settings ? "" : " (some failed)");
+        scanRoms();
+    }
+    pthread_mutex_unlock(&cloud_lock);
 }
-
-// loader-34: PokeMMO may keep things (the remembered login) outside config/, in the client folder, which is shared by every
-// profile. Files in the active slot newer than its install are listed once at start, so that the log shows what the client wrote.
-static void listClientWrites(void) {
-    char marker[360];
-    struct stat installed;
-    snprintf(marker, sizeof(marker), "%s/.prospero-complete", active_dir);
-    if (!active_dir[0] || stat(marker, &installed)) return;
-    static char stack[16][400];
-    unsigned depth = 0, shown = 0, seen = 0;
-    snprintf(stack[depth++], sizeof(stack[0]), "%s", active_dir);
-    while (depth && seen < 20000) {
-        char folder[400];
-        snprintf(folder, sizeof(folder), "%s", stack[--depth]);
-        int error = 0;
-        PlatformDirectory *directory = platformDirectoryOpen(folder, &error);
-        if (!directory) continue;
-        char name[256], path[700];
-        uint8_t type;
-        uint64_t inode;
-        while (platformDirectoryRead(directory, name, &type, &inode, &error) == 1) {
-            ++seen;
-            snprintf(path, sizeof(path), "%s/%s", folder, name);
-            if (type == 4) {
-                if (depth < 16 && strlen(path) < sizeof(stack[0])) snprintf(stack[depth++], sizeof(stack[0]), "%s", path);
-                continue;
-            }
-            struct stat info;
-            if (stat(path, &info) || info.st_mtime <= installed.st_mtime || !strcmp(name, ".prospero-complete")) continue;
-            if (shown++ < 30) say("client writes: %s (%lld bytes)", path + strlen(active_dir), (long long)info.st_size);
+static void *cloudMain(void *argument) {
+    (void)argument;
+    uint64_t last_profile = 0;
+    for (;;) {
+        sceKernelUsleep(1000000);
+        if (atomic_exchange(&cloud_signin_requested, false)) {
+            pthread_mutex_lock(&cloud_lock);
+            if (cloudSignInScreen()) atomic_store(&cloud_roms_dirty, true);
+            pthread_mutex_unlock(&cloud_lock);
         }
-        platformDirectoryClose(directory);
+        if (!cloudSignedIn()) continue;
+        uint64_t now = platformMonotonicNs();
+        if (atomic_load(&cloud_roms_dirty) && !uploadStatus()->current[0] && now - atomic_load(&rom_changed_ns) > 5000000000ull) {
+            atomic_store(&cloud_roms_dirty, false);
+            pthread_mutex_lock(&cloud_lock);
+            cloudSyncRoms(ROM_FOLDER, true, false);
+            pthread_mutex_unlock(&cloud_lock);
+        }
+        if (now - last_profile > 60000000000ull) {
+            last_profile = now;
+            pthread_mutex_lock(&cloud_lock);
+            cloudBackupProfile(player_folder, player_config);
+            pthread_mutex_unlock(&cloud_lock);
+        }
     }
-    say("client writes: %u file(s) in the client folder changed since it was installed", shown);
+    return NULL;
+}
+// The game ends with Exit: the playing profile's settings go up first (waiting at most a few seconds for other Drive work).
+static void cloudBackupAtExit(void) {
+    if (!cloudSignedIn()) return;
+    for (unsigned waited = 0; waited < 50; ++waited) {
+        if (!pthread_mutex_trylock(&cloud_lock)) {
+            cloudBackupProfile(player_folder, player_config);
+            pthread_mutex_unlock(&cloud_lock);
+            return;
+        }
+        sceKernelUsleep(100000);
+    }
+    say("cloud: busy at exit: the settings go up next time");
 }
 
 // The checks and the client start run behind the screen.
@@ -1000,13 +1042,15 @@ static void *workMain(void *argument) {
     (void)argument;
     listFolder("fs.list.app0", "/app0", NULL, 0);
     prepareSlots();
-    listClientWrites();
-    probePlaces();
+    cloudInit(ROOT "/cloud");
     char address[16];
     snprintf(upload_address, sizeof(upload_address), "%s", platformLocalIPv4(address) ? address : "<console IP>");
     existing_ftp_port = uploadDetectFtp();
     say("upload: %s", existing_ftp_port ? "an FTP server is already running" : "no FTP server is running: the ROM screen will start one");
     scanRoms();
+    offerRestore();
+    pthread_t cloud;
+    if (!pthread_create(&cloud, NULL, cloudMain, NULL)) pthread_detach(cloud);
     updateClient(false);
     if (slot_notice[0] && !atomic_load(&update_warning_set)) {
         snprintf(update_warning, sizeof(update_warning), "%s", slot_notice);

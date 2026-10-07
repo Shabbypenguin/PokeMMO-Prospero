@@ -145,7 +145,8 @@ int main(int argc, char **argv) {
         for (unsigned i = 0; i < scan.count; ++i) printf("rom: %s -> game %d: %s\n", scan.files[i].file, scan.files[i].game, scan.files[i].note);
         overlayBegin(W, H);
         RomUploadInfo info = {.address = "192.168.1.20", .web = true, .ftp_port = 2121, .folder = NULL,  // the title's own FTP server opens in the ROM folder
-                              .receiving = "Receiving Pokemon - Black Version (USA, Europe).nds: 84 of 256 MB"};
+                              .receiving = "Receiving Pokemon - Black Version (USA, Europe).nds: 84 of 256 MB",
+                              .cloud = "\x03 Back up your ROMs and settings to Google Drive"};
         romScreenDraw(&scan, &info, ROM_SCREEN_REQUIRED);
         overlayEnd();
         snprintf(path, sizeof(path), "%s/roms.ppm", out);
@@ -154,6 +155,12 @@ int main(int argc, char **argv) {
         romScreenDraw(&scan, &info, ROM_SCREEN_OPTIONAL);
         overlayEnd();
         snprintf(path, sizeof(path), "%s/roms-optional.ppm", out);
+        save(path);
+        overlayBegin(W, H);  // loader-36: the Google Drive sign-in
+        CloudSignInView sign_in = {.url = "https://www.google.com/device", .code = "PKMN-PS5X", .state = "Waiting for you to approve on your phone..."};
+        cloudSignInDraw(&sign_in);
+        overlayEnd();
+        snprintf(path, sizeof(path), "%s/cloud-signin.ppm", out);
         save(path);
     }
 

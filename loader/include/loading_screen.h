@@ -40,6 +40,14 @@ typedef struct {
     unsigned ftp_port;    // an FTP server to use, 0 when none
     const char *folder;   // the ROM folder as an FTP payload shows it; NULL for the title's own server (it opens there)
     const char *receiving;  // "Receiving ...", or NULL
+    const char *cloud;      // loader-36: the Google Drive line ("\x03 Back up ... to Google Drive", what it is doing), or NULL
 } RomUploadInfo;
 enum { ROM_SCREEN_NONE, ROM_SCREEN_REQUIRED, ROM_SCREEN_OPTIONAL };
 void romScreenDraw(const RomScan *scan, const RomUploadInfo *upload, int mode);
+// loader-36: the Google Drive sign-in: where to go on a phone, the code to enter there, and how it is going.
+typedef struct {
+    const char *url, *code;  // NULL while the code is being fetched
+    const char *state;       // "Waiting for you to approve on your phone...", an error
+    bool failed;
+} CloudSignInView;
+void cloudSignInDraw(const CloudSignInView *view);

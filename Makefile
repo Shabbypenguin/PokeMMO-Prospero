@@ -10,7 +10,7 @@ LOADER_TITLE_ID ?= PPSA98001
 LOG_HOST ?= $(PROBE_LOG_HOST)
 CLIENT_ZIP ?= private/PokeMMO-Client.zip
 
-.PHONY: help env-check loader host-loader host-run overlay-preview updater-test image-loader fetch-client analyze clean
+.PHONY: help env-check cloud-test loader host-loader host-run overlay-preview updater-test image-loader fetch-client analyze clean
 
 help:
 	@echo "make loader         build the title (folder install, dist/pokemmo-prospero-loader-$(LOADER_TITLE_ID).zip; LOG_HOST=192.168.x.y optional)"
@@ -64,6 +64,24 @@ updater-test:
 	python3 tools/range_server.py $(UPDATER_ZIP) 8765 --drop-every 30000000 & server=$$!; sleep 1; \
 	build/updater-test/updater_test http://127.0.0.1:8765/PokeMMO-Client.zip build/updater-test/slot -; status=$$?; \
 	kill $$server; exit $$status
+
+# The Google Drive backup against a stand-in server (tools/cloud_server.py): back up, then restore as a fresh install would.
+cloud-test:
+	@rm -rf build/cloud-test && mkdir -p build/cloud-test/roms build/cloud-test/users/428814950/config/keys
+	$${CC:-clang} -std=gnu11 -O1 -g -Wall -Wextra -Wno-unused-parameter -D_GNU_SOURCE -Iloader/include -o build/cloud-test/cloud_test \
+		tools/cloud_test.c loader/src/cloud.c loader/src/diagnostics.c loader/platform/host/platform_host.c -lz -lpthread
+	head -c 20000000 /dev/urandom > "build/cloud-test/roms/Pokemon Black (Test).nds"
+	head -c 3000000 /dev/urandom > build/cloud-test/roms/firered.gba
+	echo "not a rom" > build/cloud-test/roms/notes.txt
+	printf 'client.graphics.width=1920\nclient.login.remember=true\n' > build/cloud-test/users/428814950/config/main.properties
+	echo 4 > build/cloud-test/users/428814950/config/.prospero-defaults
+	echo keymap > build/cloud-test/users/428814950/config/keys/pad.txt
+	python3 tools/cloud_server.py --port 8766 & server=$$!; sleep 1; \
+	PROSPERO_CLOUD_BASE=http://127.0.0.1:8766 build/cloud-test/cloud_test build/cloud-test; status=$$?; kill $$server; \
+	cmp "build/cloud-test/roms/Pokemon Black (Test).nds" "build/cloud-test/roms2/Pokemon Black (Test).nds" && \
+	cmp build/cloud-test/roms/firered.gba build/cloud-test/roms2/firered.gba && test ! -e build/cloud-test/roms2/notes.txt && \
+	diff -r build/cloud-test/users/428814950/config build/cloud-test/users2/428814950/config && echo "restored files are identical"; \
+	exit $$status
 
 host-run: host-loader
 	@[[ -f "$(CLIENT_ZIP)" ]] || { echo "no client at $(CLIENT_ZIP): run 'make fetch-client' first"; exit 2; }

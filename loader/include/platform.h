@@ -68,6 +68,12 @@ bool platformLocalIPv4(char out[16]);
 // response headers read; *status is the HTTP status. NULL on failure, with a reason in `error`.
 typedef struct PlatformHttp PlatformHttp;
 PlatformHttp *platformHttpOpen(const char *url, bool head, int64_t range_start, int64_t range_end, int *status, char *error, size_t error_size);
+// loader-36: any method ("POST", "PUT", "DELETE", ...), extra headers and a request body held in memory (NULL/0 for none).
+typedef struct {
+    const char *name, *value;
+} PlatformHttpHeader;
+PlatformHttp *platformHttpSend(const char *method, const char *url, const PlatformHttpHeader *headers, unsigned header_count, const void *body,
+                               size_t body_size, int *status, char *error, size_t error_size);
 int64_t platformHttpLength(PlatformHttp *request);  // Content-Length, -1 when not given
 bool platformHttpHeader(PlatformHttp *request, const char *name, char *value, size_t size);  // case-insensitive name
 int64_t platformHttpRead(PlatformHttp *request, void *buffer, size_t size);                  // bytes, 0 at the end, < 0 error

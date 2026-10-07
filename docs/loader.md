@@ -87,6 +87,19 @@ their questions and no longer run.
 | Exit in the game's menu | Closes the title and goes back to the home screen (loader-21) |
 | A link in the game | Opens in the PS5 web browser (the PS button brings the game back); if the browser cannot start, a box shows the address and a QR code |
 
+### Google Drive backup (loader-36)
+
+The title storage is wiped whenever the title is installed again, and nothing outside it is writable from an image install
+(loader-33/34: `/data` and the rest are not even visible). `loader/src/cloud.c` therefore keeps a copy in the player's own
+Google Drive, with the project's OAuth client of type "TVs and Limited Input devices" (scope `drive.file`: only files the title
+made). Sign-in is Google's device flow: the TV shows a code, the player approves at google.com/device; the refresh token is
+kept in `/download0/root/cloud/google-token`. Drive layout: `PokeMMO Prospero/roms/<file>` (resumable uploads in 8 MiB pieces;
+same name and size counts as present; never deleted by the title) and `PokeMMO Prospero/profile-<profile id>.tar` (a ustar
+archive of that profile's config folder, replaced when its contents change). A fresh install (no ROM files, not signed in,
+not declined) asks whether to restore; the ROM screen offers the sign-in (Square). `make cloud-test` runs backup and restore
+against `tools/cloud_server.py`, a stand-in for Google's endpoints. Google's own servers were first reached from a console in
+loader-36.
+
 ### Client slots (loader-18)
 
 `/download0/root/slots/a` and `slots/b` each hold a complete client (a `.prospero-complete` marker names its revision);

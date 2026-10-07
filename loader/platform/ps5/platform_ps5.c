@@ -432,6 +432,7 @@ int sceHttpInit(int net_pool_id, int ssl_context, size_t pool_size);
 int sceHttpCreateTemplate(int http_context, const char *user_agent, int http_version, int automatic_proxy);
 int sceHttpCreateConnectionWithURL(int template_id, const char *url, int keep_alive);
 int sceHttpCreateRequestWithURL(int connection, int method, const char *url, uint64_t content_length);
+int sceHttpCreateRequestWithURL2(int connection, const char *method, const char *url, uint64_t content_length);
 int sceHttpAddRequestHeader(int id, const char *name, const char *value, uint32_t mode);
 int sceHttpSendRequest(int request, const void *data, size_t size);
 int sceHttpGetStatusCode(int request, int *status);
@@ -440,6 +441,8 @@ int sceHttpGetAllResponseHeaders(int request, char **headers, size_t *size);
 int sceHttpReadData(int request, void *data, size_t size);
 int sceHttpSetConnectTimeOut(int id, uint32_t microseconds);
 int sceHttpSetRecvTimeOut(int id, uint32_t microseconds);
+int sceHttpSetSendTimeOut(int id, uint32_t microseconds);
+int sceHttpSetAutoRedirect(int id, int enable);
 int sceHttpSetResolveTimeOut(int id, uint32_t microseconds);
 int sceHttpDeleteRequest(int request);
 int sceHttpDeleteConnection(int connection);
@@ -470,7 +473,9 @@ void platformHttpClose(PlatformHttp *h) {
     free(h->headers);
     free(h);
 }
-PlatformHttp *platformHttpOpen(const char *url, bool head, int64_t range_start, int64_t range_end, int *status, char *error, size_t error_size) {
+// One request: GET/HEAD by number (the updater, unchanged since loader-15), any other method by name (loader-36, the cloud backup).
+static PlatformHttp *httpRequest(const char *method, const char *url, const PlatformHttpHeader *headers, unsigned header_count, const void *body,
+                                 size_t body_size, int *status, char *error, size_t error_size) {
     pthread_once(&http_once, httpInit);
     *status = 0;
     if (http_context < 0) {
@@ -489,43 +494,57 @@ PlatformHttp *platformHttpOpen(const char *url, bool head, int64_t range_start, 
     if (rc >= 0) {
         sceHttpSetResolveTimeOut(h->template_id, 15u * 1000000u);
         sceHttpSetConnectTimeOut(h->template_id, 15u * 1000000u);
-        sceHttpSetRecvTimeOut(h->template_id, 30u * 1000000u);
+        sceHttpSetRecvTimeOut(h->template_id, 60u * 1000000u);
+        sceHttpSetSendTimeOut(h->template_id, 120u * 1000000u);
+        // Google's resumable uploads answer 308 "Resume Incomplete" without a Location: never a redirect to follow.
+        if (strcmp(method, "GET") && strcmp(method, "HEAD")) sceHttpSetAutoRedirect(h->template_id, 0);
         stage = "connection";
         rc = h->connection = sceHttpCreateConnectionWithURL(h->template_id, url, 1);
     }
     if (rc >= 0) {
         stage = "request";
-        rc = h->request = sceHttpCreateRequestWithURL(h->connection, head ? 2 /* HEAD */ : 0 /* GET */, url, 0);
+        if (!strcmp(method, "GET") || !strcmp(method, "HEAD"))
+            rc = h->request = sceHttpCreateRequestWithURL(h->connection, method[0] == 'H' ? 2 /* HEAD */ : 0 /* GET */, url, body_size);
+        else
+            rc = h->request = sceHttpCreateRequestWithURL2(h->connection, method, url, body_size);
     }
-    if (rc >= 0 && range_end >= 0) {
-        char range[64];
-        snprintf(range, sizeof(range), "bytes=%lld-%lld", (long long)range_start, (long long)range_end);
-        stage = "range header";
-        rc = sceHttpAddRequestHeader(h->request, "Range", range, 0 /* overwrite */);
+    for (unsigned i = 0; rc >= 0 && i < header_count; ++i) {
+        stage = "header";
+        rc = sceHttpAddRequestHeader(h->request, headers[i].name, headers[i].value, 0 /* overwrite */);
     }
     if (rc >= 0) {
         stage = "send";
-        rc = sceHttpSendRequest(h->request, NULL, 0);
+        rc = sceHttpSendRequest(h->request, body_size ? body : NULL, body_size);
     }
     if (rc >= 0) {
         stage = "status";
         rc = sceHttpGetStatusCode(h->request, status);
     }
     if (rc < 0) {
-        snprintf(error, error_size, "%s failed (0x%08x)", stage, (unsigned)rc);
+        snprintf(error, error_size, "%s %s failed (0x%08x)", method, stage, (unsigned)rc);
         platformHttpClose(h);
         return NULL;
     }
     int has_length = -1;
     uint64_t length = 0;
     if (sceHttpGetResponseContentLength(h->request, &has_length, &length) >= 0 && has_length == 0) h->length = (int64_t)length;
-    char *headers = NULL;
+    char *response_headers = NULL;
     size_t size = 0;
-    if (sceHttpGetAllResponseHeaders(h->request, &headers, &size) >= 0 && headers && (h->headers = malloc(size + 1))) {
-        memcpy(h->headers, headers, size);
+    if (sceHttpGetAllResponseHeaders(h->request, &response_headers, &size) >= 0 && response_headers && (h->headers = malloc(size + 1))) {
+        memcpy(h->headers, response_headers, size);
         h->headers[size] = 0;
     }
     return h;
+}
+PlatformHttp *platformHttpOpen(const char *url, bool head, int64_t range_start, int64_t range_end, int *status, char *error, size_t error_size) {
+    char range[64];
+    PlatformHttpHeader header = {"Range", range};
+    if (range_end >= 0) snprintf(range, sizeof(range), "bytes=%lld-%lld", (long long)range_start, (long long)range_end);
+    return httpRequest(head ? "HEAD" : "GET", url, &header, range_end >= 0 ? 1 : 0, NULL, 0, status, error, error_size);
+}
+PlatformHttp *platformHttpSend(const char *method, const char *url, const PlatformHttpHeader *headers, unsigned header_count, const void *body,
+                               size_t body_size, int *status, char *error, size_t error_size) {
+    return httpRequest(method, url, headers, header_count, body, body_size, status, error, error_size);
 }
 int64_t platformHttpLength(PlatformHttp *h) { return h->length; }
 bool platformHttpHeader(PlatformHttp *h, const char *name, char *value, size_t size) {

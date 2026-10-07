@@ -144,6 +144,23 @@ PokeMMO account and characters are on PokeMMO's servers and are not affected. In
 Client updates are installed next to the working client and only replace it once the new one has shown a picture;
 if an update fails to start, the title goes back to the previous client by itself.
 
+### Google Drive backup
+
+So that a reinstall (or a launcher update) doesn't cost you your ROMs and logins, the title can keep a copy in your own
+Google Drive:
+
+- **Turn it on:** on the ROM screen press **Square**, or say yes when a fresh install asks "Restore your ROMs and settings
+  from Google Drive?". The TV shows a code: open `google.com/device` on your phone (or scan the QR code), enter the code and
+  allow access. One Google account per console.
+- **What goes up:** your ROMs (once each) and every PS5 profile's settings, including PokeMMO's remembered login, into a
+  folder called **PokeMMO Prospero** in that Drive. The title can only see files it made itself.
+- **When:** new ROMs a few seconds after they arrive; the playing profile's settings every minute they changed and when you
+  choose Exit in the game.
+- **Restoring:** after installing the title again, answer yes to the question and sign in: the ROMs and every profile's
+  settings come back before the game starts.
+
+Anyone with access to that Google account can read the backed-up settings and logins of every profile on the console.
+
 ## Troubleshooting
 
 | Problem | Try |

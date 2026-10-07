@@ -197,8 +197,27 @@ void romScreenDraw(const RomScan *scan, const RomUploadInfo *upload, int mode) {
     }
     if (upload->receiving && upload->receiving[0])
         overlayTextFit(left + 30, row - 4, upload->receiving, 26, width - 60 - (upload->web ? 260 : 0), GREEN);
+    if (upload->cloud && upload->cloud[0]) overlayTextFit(left + 30, box_y + 220, upload->cloud, 26, width - 60 - (upload->web ? 260 : 0), SOFT);
     if (blocking)
         overlayTextCentered(OVERLAY_WIDTH / 2, 995, "\x01 Check again", 34, TEXT);
     else
         overlayTextCentered(OVERLAY_WIDTH / 2, 995, "\x01 Start the game", 34, TEXT);
+}
+
+// ---- the Google Drive sign-in (loader-36) ----------------------------------------------------------------------------------------------
+void cloudSignInDraw(const CloudSignInView *view) {
+    overlayClear(0x050B18FFu);
+    overlayTextCentered(OVERLAY_WIDTH / 2, 90, "Back up to Google Drive", 56, TEXT);
+    overlayTextCentered(OVERLAY_WIDTH / 2, 170, "Your ROMs and every profile's settings, in a folder of your own Drive.", 30, DIM);
+    if (view->url && view->code && view->code[0]) {
+        const float left = 300;
+        overlayText(left, 300, "1.  On your phone or computer, open", 36, SOFT);
+        overlayText(left + 60, 360, view->url, 48, BLUE);
+        overlayText(left, 470, "2.  Sign in to Google and enter the code", 36, SOFT);
+        overlayText(left + 60, 530, view->code, 96, TEXT);
+        overlayText(left, 690, "3.  Allow PokeMMO Prospero to use its own files in your Drive.", 36, SOFT);
+        drawQr(1340, 290, 300, view->url);
+    }
+    if (view->state) overlayTextCentered(OVERLAY_WIDTH / 2, 830, view->state, 34, view->failed ? RED : AMBER);
+    overlayTextCentered(OVERLAY_WIDTH / 2, 960, view->failed ? "\x02 Back" : "\x02 Cancel", 34, TEXT);
 }
