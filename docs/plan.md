@@ -20,7 +20,7 @@ Client revision 32920, `bin/linux/x64/PokeMMO` (re-run `make analyze` on every r
 
 ## Phase 1b — hardware probe (done, retired)
 
-The probe title was removed once the loader covered everything it tested; its source is at git tag `probe-final`.
+The probe title was removed once the loader covered everything it tested; its source is at branch [`probe-final`](https://github.com/Shabbypenguin/PokeMMO-Prospero/tree/probe-final).
 
 The probe answered on firmware 12.40: compatibility context + legacy GLSL + blending on ps5-opengl,
 `%fs:0x28` stability, thread stack control, address-space reservations, flexible vs direct memory (and direct memory
