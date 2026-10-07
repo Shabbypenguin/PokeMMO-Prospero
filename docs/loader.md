@@ -108,8 +108,9 @@ the game code PokeMMO itself logs (`IRBO`, `BPRE`, ...) tells Black/White (requi
 HeartGold/SoulSilver (optional) from games PokeMMO does not use (Black 2/White 2, LeafGreen, Ruby/Sapphire, Diamond/Pearl)
 and from compressed or unrelated files. Without Black or White a ROM screen stays up: what was found, what is missing, the
 FTP details to upload with (address, port 2121 and folder, each on its own line) and the installer as the other way; Cross checks the folder again,
-and there is no way round it (PokeMMO cannot get past its start without Black/White). With only optional games missing, the loading screen says how many were found and holding Square
-shows the same screen.
+and there is no way round it (PokeMMO cannot get past its start without Black/White). With only optional games missing, the loading screen offers the same screen for 5 seconds just before
+the game starts ("3 of 5 games found", Square; loader-31); taken, Cross then starts the game. The ROM screen is never shown
+over the client's own start, when the loader cannot answer input.
 
 ### Uploading ROMs without an FTP payload (loader-19)
 

@@ -130,7 +130,8 @@ static void drawQr(float x, float y, float size, const char *text) {
 }
 
 // ---- the ROM screen ------------------------------------------------------------------------------------------------------------------
-void romScreenDraw(const RomScan *scan, const RomUploadInfo *upload, bool blocking) {
+void romScreenDraw(const RomScan *scan, const RomUploadInfo *upload, int mode) {
+    bool blocking = mode == ROM_SCREEN_REQUIRED;
     const uint32_t GREEN = 0x7EE08AFFu;
     overlayClear(0x050B18FFu);
     overlayTextCentered(OVERLAY_WIDTH / 2, 60, "Game ROMs", 56, TEXT);
@@ -196,5 +197,5 @@ void romScreenDraw(const RomScan *scan, const RomUploadInfo *upload, bool blocki
     if (blocking)
         overlayTextCentered(OVERLAY_WIDTH / 2, 995, "\x01 Check again", 34, TEXT);
     else
-        overlayTextCentered(OVERLAY_WIDTH / 2, 995, "Release \x03 to go back", 30, DIM);
+        overlayTextCentered(OVERLAY_WIDTH / 2, 995, "\x01 Start the game", 34, TEXT);
 }

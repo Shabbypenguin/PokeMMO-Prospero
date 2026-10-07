@@ -88,8 +88,8 @@ int main(int argc, char **argv) {
     struct {
         const char *name;
         void (*change)(LoadingView *);
-    } screens[] = {{"loading-install", NULL}, {"loading-problem", NULL}, {"loading-details", NULL}, {"loading-update", NULL}};
-    for (unsigned i = 0; i < 4; ++i) {
+    } screens[] = {{"loading-install", NULL}, {"loading-problem", NULL}, {"loading-details", NULL}, {"loading-update", NULL}, {"loading-rom-offer", NULL}};
+    for (unsigned i = 0; i < 5; ++i) {
         LoadingView v = view;
         if (i == 1) {
             v.problem = "PokeMMO is not installed yet";
@@ -101,6 +101,11 @@ int main(int argc, char **argv) {
             v.fraction = 0.08f;
             v.question = "PokeMMO update: revision 32920 to 32951 (92 MB)";
             v.choices = "\x01 Download     \x02 Skip          (downloading in 4)";
+        }
+        if (i == 4) {  // loader-31: the 5-second offer when optional games are missing
+            v.fraction = 0.6f;
+            v.question = "3 of 5 games found";
+            v.choices = "\x03 Add more ROMs          (starting in 4)";
         }
         overlayBegin(W, H);
         loadingScreenDraw(&v);
@@ -141,9 +146,14 @@ int main(int argc, char **argv) {
         overlayBegin(W, H);
         RomUploadInfo info = {.address = "192.168.1.20", .web = true, .ftp_port = 2121, .folder = "/data/homebrew/PPSA98001/roms/",
                               .receiving = "Receiving Pokemon - Black Version (USA, Europe).nds: 84 of 256 MB"};
-        romScreenDraw(&scan, &info, true);
+        romScreenDraw(&scan, &info, ROM_SCREEN_REQUIRED);
         overlayEnd();
         snprintf(path, sizeof(path), "%s/roms.ppm", out);
+        save(path);
+        overlayBegin(W, H);
+        romScreenDraw(&scan, &info, ROM_SCREEN_OPTIONAL);
+        overlayEnd();
+        snprintf(path, sizeof(path), "%s/roms-optional.ppm", out);
         save(path);
     }
 

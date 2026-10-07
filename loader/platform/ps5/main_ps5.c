@@ -41,7 +41,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define LOADER_MILESTONE "loader-30"
+#define LOADER_MILESTONE "loader-31"
 // ps5-opengl's app heap (malloc of the loader and of everything the client allocates with malloc): from direct memory.
 const size_t ps5_opengl_heap_size = 768u << 20;
 
@@ -160,7 +160,7 @@ static unsigned listFolder(const char *step, const char *path, char names[][256]
 
 // ---- ROMs (loader-16): what is in the ROM folder against what PokeMMO uses (roms.c) ---------------------------------------------
 // Without Black or White the game cannot be played: the ROM screen stays up before the game starts (Cross checks the folder
-// again after an upload; PokeMMO cannot get past its start without it, so there is no way round). Missing optional games are a note; holding Square shows the screen.
+// again after an upload; PokeMMO cannot get past its start without it, so there is no way round). Missing optional games: a 5-second offer before the game starts (loader-31, below).
 // loader-23: the title folder is writable in a folder install and read-only in an image (.ffpfsc). Read-only: the ROMs live in
 // the title storage (only the title's own upload page and FTP server can reach them), the log too (the page offers it).
 static bool title_writable;
@@ -208,8 +208,14 @@ static const char *logWhere(void) {
         snprintf(where, sizeof(where), "http://%s:%u/log, before the game starts", upload_address, (unsigned)UPLOAD_HTTP_PORT);
     return where;
 }
-static _Atomic bool rom_blocking;
-static _Atomic int rom_choice;  // 0 none, 1 check again (loader-22: PokeMMO cannot get past its start without Black/White)
+// loader-31: the ROM screen is only shown while the game waits for it (never over the client's start, when nothing answers):
+// without Black/White it stays up (Cross checks again); with optional games missing, the loading screen offers it for 5 seconds
+// before the game starts (Square), and then Cross starts the game.
+static _Atomic int rom_mode;    // ROM_SCREEN_NONE, ROM_SCREEN_REQUIRED or ROM_SCREEN_OPTIONAL
+static _Atomic int rom_choice;  // 0 none, 1 Cross (check again / start the game)
+static _Atomic uint64_t rom_offer_deadline_ns;  // the 5-second offer runs until then (0: none)
+static _Atomic bool rom_offer_taken;           // Square was pressed during it
+#define ROM_OFFER_NS 5000000000ull
 static void scanRoms(void) {
     mark("fs.list.roms", RUNNING);
     RomScan scan;
@@ -223,15 +229,32 @@ static void scanRoms(void) {
     mark("fs.list.roms", scan.listed ? PASS : FAIL);
     mark("fs.romread", scan.found[ROM_BLACK_WHITE] >= 0 ? (romGamesFound(&scan) == ROM_GAMES ? PASS : INFO) : FAIL);
 }
-static void waitForRequiredRom(void) {
-    while (rom_scan.found[ROM_BLACK_WHITE] < 0) {
-        say("roms: Black/White missing: showing the ROM screen");
-        atomic_store(&rom_choice, 0);
-        atomic_store(&rom_blocking, true);
-        while (!atomic_load(&rom_choice)) sceKernelUsleep(20000);
-        scanRoms();
+static void romScreenUntilCross(int mode) {
+    atomic_store(&rom_choice, 0);
+    atomic_store(&rom_mode, mode);
+    while (!atomic_load(&rom_choice)) sceKernelUsleep(20000);
+    atomic_store(&rom_mode, ROM_SCREEN_NONE);
+    scanRoms();
+}
+static void waitForRoms(void) {
+    bool shown = false;
+    for (;;) {
+        while (rom_scan.found[ROM_BLACK_WHITE] < 0) {
+            say("roms: Black/White missing: showing the ROM screen");
+            romScreenUntilCross(ROM_SCREEN_REQUIRED);
+            shown = true;
+        }
+        if (shown || romGamesFound(&rom_scan) == ROM_GAMES) return;  // the screen was up already this start, or nothing is missing
+        say("roms: %u of %u games found: offering the ROM screen for 5 seconds", romGamesFound(&rom_scan), (unsigned)ROM_GAMES);
+        atomic_store(&rom_offer_taken, false);
+        atomic_store(&rom_offer_deadline_ns, platformMonotonicNs() + ROM_OFFER_NS);
+        while (platformMonotonicNs() < atomic_load(&rom_offer_deadline_ns) && !atomic_load(&rom_offer_taken)) sceKernelUsleep(20000);
+        atomic_store(&rom_offer_deadline_ns, 0);
+        if (!atomic_load(&rom_offer_taken)) return;
+        say("roms: the player chose to add ROMs");
+        romScreenUntilCross(ROM_SCREEN_OPTIONAL);
+        shown = true;  // back to the top: Black/White may have been deleted meanwhile
     }
-    atomic_store(&rom_blocking, false);
 }
 
 // ---- the client: copied from the title folder (dev builds) into the title storage, where it can write next to itself ------------------
@@ -862,14 +885,17 @@ static void loadingView(LoadingView *view, LoadingStep *step_view, char *detail,
         if (title_writable)
             snprintf(advice, sizeof(advice), "%s", "Close the title with the PS button and start it again. If it keeps happening, send prospero.log from the title folder (FTP).");
         else
-            snprintf(advice, sizeof(advice), "Close the title with the PS button and start it again. If it keeps happening, hold Square and save "
+            snprintf(advice, sizeof(advice), "Close the title with the PS button and start it again. If it keeps happening, hold Triangle and save "
                                              "http://%s:%u/log-previous (this start's log) from a browser.", upload_address, (unsigned)UPLOAD_HTTP_PORT);
         view->advice = advice;
     }
-    if (!view->warning && stepState("fs.romread") == INFO) {
-        static char note[96];
-        snprintf(note, sizeof(note), "%u of %u games found: hold \x03 for the ROM list", atomic_load(&rom_count), (unsigned)ROM_GAMES);
-        view->warning = note;
+    uint64_t offer = atomic_load(&rom_offer_deadline_ns), now = platformMonotonicNs();
+    if (offer && now < offer && !view->problem) {  // the 5-second ROM offer, in place of the status (gone once it ends)
+        static char question[96], choices[96];
+        snprintf(question, sizeof(question), "%u of %u games found", atomic_load(&rom_count), (unsigned)ROM_GAMES);
+        snprintf(choices, sizeof(choices), "\x03 Add more ROMs          (starting in %u)", (unsigned)((offer - now) / 1000000000ull) + 1);
+        view->question = question;
+        view->choices = choices;
     }
 }
 // The same screen over the game's first (black) frames, on the game's thread and context.
@@ -901,11 +927,11 @@ static void drawScreen(unsigned frame) {
         if (pressed & PLATFORM_PAD_CROSS) atomic_store(&update_choice, CHOICE_DOWNLOAD);
         if (pressed & PLATFORM_PAD_CIRCLE) atomic_store(&update_choice, CHOICE_SKIP);
     }
-    bool blocking = atomic_load(&rom_blocking);
-    if (blocking && !atomic_load(&rom_choice)) {
-        if (pressed & PLATFORM_PAD_CROSS) atomic_store(&rom_choice, 1);
-    }
-    if (!view.details && (blocking || (read && (pad.buttons & PLATFORM_PAD_SQUARE)))) {
+    int mode = atomic_load(&rom_mode);
+    if (mode != ROM_SCREEN_NONE && !atomic_load(&rom_choice) && (pressed & PLATFORM_PAD_CROSS)) atomic_store(&rom_choice, 1);
+    uint64_t offer = atomic_load(&rom_offer_deadline_ns);
+    if (offer && platformMonotonicNs() < offer && (pressed & PLATFORM_PAD_SQUARE)) atomic_store(&rom_offer_taken, true);
+    if (!view.details && mode != ROM_SCREEN_NONE) {
         pthread_mutex_lock(&rom_lock);
         RomScan scan = rom_scan;
         pthread_mutex_unlock(&rom_lock);
@@ -927,7 +953,7 @@ static void drawScreen(unsigned frame) {
                                                                                  : 0,
                               .folder = ROM_FTP_PATH "/",
                               .receiving = receiving};
-        romScreenDraw(&scan, &info, blocking);
+        romScreenDraw(&scan, &info, mode);
         overlayEnd();
         return;
     }
@@ -997,7 +1023,7 @@ static void *workMain(void *argument) {
         atomic_store(&update_warning_set, true);
     }
     if (slot_state.active && active_revision[0]) {
-        waitForRequiredRom();
+        waitForRoms();
         // The ports are free again before the game starts; marking them started keeps Square/Triangle from starting them after.
         if (atomic_exchange(&uploads_started, true)) uploadServersStop();
         applyDefaults();

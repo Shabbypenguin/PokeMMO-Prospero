@@ -53,8 +53,11 @@ The ROM screen lists what was found, what is missing and what is not usable, and
 | **Installer** | Run the installer and answer yes to uploading ROMs. With an image install it talks to the title's own FTP server and only uploads ROMs. |
 
 The screen shows each file arriving and checks the folder again afterwards; press **Cross** to check again yourself.
-The upload page and FTP server only run while the ROM screen is up, and stop when the game starts. To add games
-later, hold **Square** on the loading screen.
+The upload page and FTP server only run while the ROM screen is up, and stop when the game starts.
+
+**Adding games later.** When optional games are missing, the loading screen says how many were found and counts down
+5 seconds just before the game starts: press **Square** then to open the ROM screen, upload, and press **Cross** to start
+the game. Without a press the game starts as usual.
 
 ## ROMs
 
@@ -119,7 +122,7 @@ The cursor hides a few seconds after you stop touching the pad.
 | Button | Does |
 |--------|------|
 | Hold Triangle | Startup details: each check's result and where to get the full log |
-| Hold Square | ROM screen: what is uploaded and how to add more |
+| Square (during the 5-second "games found" countdown) | ROM screen, to add optional games; Cross then starts the game |
 | Cross / Circle | Answer the update question (download / skip); it downloads by itself after a countdown |
 
 ### Other
@@ -150,7 +153,7 @@ if an update fails to start, the title goes back to the previous client by itsel
 | Red bar: "PokeMMO is not installed yet" | Check the console's internet connection, close the title (PS button) and start it again. |
 | ROM screen keeps coming back | Black or White isn't there or isn't readable. The screen says what each file is; unpack zipped files first. |
 | Web page or FTP won't connect | Use the address shown on screen, from the same network. Uploads (and the FTP server) only work before the game starts. |
-| "PokeMMO stopped while starting" or the game crashed | Start the title again. If it keeps happening, hold Square and save `http://<console IP>:8080/log-previous` (the crashed start's log), then open an issue with it. |
+| "PokeMMO stopped while starting" or the game crashed | Start the title again. If it keeps happening, hold Triangle (it starts the upload page) and save `http://<console IP>:8080/log-previous` (the crashed start's log), then open an issue with it. |
 
 ## For developers
 
