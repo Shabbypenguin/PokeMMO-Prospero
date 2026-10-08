@@ -74,8 +74,12 @@ jobs:
           done
           test -s dist/PPSA98001.ffpfsc
           grep -q "\"$VERSION\"" build/titles/PPSA98001/src/prospero_version.h || { echo "::error::the build does not carry $VERSION"; exit 1; }
-          # dist/ belongs to root (made inside the container): the sums go next to it, in the runner's own checkout.
+          # Catalog-installable zip: the PPSA98001/ app folder at the archive root. Written to the runner's checkout
+          # (GITHUB_WORKSPACE), not into dist/, which belongs to root (made inside the container).
+          ( cd build/titles/PPSA98001/dist && zip -r -q "$GITHUB_WORKSPACE/PPSA98001.zip" PPSA98001 )
+          # dist/ belongs to root: the sums go in the runner's own checkout.
           (cd dist && sha256sum PPSA98001.ffpfsc) > SHA256SUMS.txt
+          sha256sum PPSA98001.zip >> SHA256SUMS.txt
 
       - name: Publish the release
         env:
@@ -86,4 +90,4 @@ jobs:
           flags=(--title "PokeMMO-Prospero $VERSION" --generate-notes --target "$GITHUB_SHA")
           [[ "$PRERELEASE" == "true" ]] && flags+=(--prerelease)
           gh release create "$VERSION" "${flags[@]}" \
-            dist/PPSA98001.ffpfsc SHA256SUMS.txt
+            dist/PPSA98001.ffpfsc PPSA98001.zip SHA256SUMS.txt

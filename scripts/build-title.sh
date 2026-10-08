@@ -128,16 +128,22 @@ if [[ -n $branding ]]; then
 fi
 
 # Title metadata: ps5-opengl's param.json (address-space and page-table settings) with our identity.
-python3 - "$glsrc/native-app/param.json" "$app/sce_sys/param.json" "$title_id" "$name" "$suffix" "$download_mib" <<'PY'
-import json, sys
+python3 - "$glsrc/native-app/param.json" "$app/sce_sys/param.json" "$title_id" "$name" "$suffix" "$download_mib" "$release" <<'PY'
+import json, re, sys
 from pathlib import Path
-source, target, title_id, name, suffix, download = sys.argv[1:]
+source, target, title_id, name, suffix, download, release = sys.argv[1:]
 param = json.loads(Path(source).read_text())
 param["titleId"] = title_id
 param["conceptId"] = title_id[4:] if title_id[4:].isdigit() else "99999"  # a number either way
 param["contentId"] = f"UP9000-{title_id}_00-" + ("PKMMO" + suffix).ljust(16, "0")[:16]
 param["localizedParameters"]["en-US"]["titleName"] = name
 param["downloadDataSize"] = int(download)
+# contentVersion lets consoles detect updates. Map our MAJOR.MINOR.PATCH to NN.NNN.NNN, with MAJOR+1 so it stays
+# above the 01.000.000 that the early tester builds shipped (monotonic through 1.0.0 -> 02.000.000).
+m = re.match(r"(\d+)\.(\d+)\.(\d+)", release)
+if m:
+    major, minor, patch = (int(x) for x in m.groups())
+    param["contentVersion"] = f"{major + 1:02d}.{minor:03d}.{patch:03d}"
 Path(target).write_text(json.dumps(param, indent=2) + "\n")
 PY
 python3 "$glsrc/tools/native-display-metadata.py" "$app/sce_sys/param.json" --fps 120
