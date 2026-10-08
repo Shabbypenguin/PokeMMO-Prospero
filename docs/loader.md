@@ -98,7 +98,7 @@ same name and size counts as present; never deleted by the title) and `PokeMMO P
 archive of that profile's config folder, replaced when its contents change). A fresh install (no ROM files, not signed in,
 not declined) asks whether to restore; the ROM screen offers the sign-in (Square). `make cloud-test` runs backup and restore
 against `tools/cloud_server.py`, a stand-in for Google's endpoints. Google's own servers were first reached from a console in
-loader-36.
+loader-36; backup to a real Drive was confirmed on a console with 1.0.0.
 
 ### Client slots (loader-18)
 
