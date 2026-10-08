@@ -42,7 +42,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define LOADER_MILESTONE "loader-37"
+#define LOADER_MILESTONE "loader-38"
 // ps5-opengl's app heap (malloc of the loader and of everything the client allocates with malloc): from direct memory.
 const size_t ps5_opengl_heap_size = 768u << 20;
 
@@ -964,8 +964,9 @@ static void drawScreen(unsigned frame) {
 
 // ---- Google Drive backup (loader-36, cloud.c) -------------------------------------------------------------------------------------------
 // One Google account per console. A fresh install (no ROMs, not signed in, not declined) asks whether to restore; the ROM screen
-// offers the sign-in (Square). Signed in: new ROMs are backed up once uploads settle, the playing profile's settings every minute
-// when they changed and when the game exits. All Drive work runs under one lock (cloud.c keeps one token and its folders).
+// offers the sign-in (Square). Signed in: new ROMs are backed up once uploads settle; the playing profile's settings once at start
+// (what changed last time, also after closing with the PS button) and when the game exits, never while it runs (loader-38). All
+// Drive work runs under one lock (cloud.c keeps one token and its folders).
 static bool cloudSignInScreen(void) {
     atomic_store(&cloud_cancel, false);
     atomic_store(&cloud_screen, CLOUD_SCREEN_SIGNIN);
@@ -1002,12 +1003,15 @@ static void offerRestore(void) {
 }
 static void *cloudMain(void *argument) {
     (void)argument;
-    uint64_t last_profile = 0;
+    bool profile_due = true;  // once per start (and after a sign-in): unchanged settings cost one comparison, no upload
     for (;;) {
         sceKernelUsleep(1000000);
         if (atomic_exchange(&cloud_signin_requested, false)) {
             pthread_mutex_lock(&cloud_lock);
-            if (cloudSignInScreen()) atomic_store(&cloud_roms_dirty, true);
+            if (cloudSignInScreen()) {
+                atomic_store(&cloud_roms_dirty, true);
+                profile_due = true;
+            }
             pthread_mutex_unlock(&cloud_lock);
         }
         if (!cloudSignedIn()) continue;
@@ -1018,8 +1022,8 @@ static void *cloudMain(void *argument) {
             cloudSyncRoms(ROM_FOLDER, true, false);
             pthread_mutex_unlock(&cloud_lock);
         }
-        if (now - last_profile > 60000000000ull) {
-            last_profile = now;
+        if (profile_due) {
+            profile_due = false;
             pthread_mutex_lock(&cloud_lock);
             cloudBackupProfile(player_folder, player_config);
             pthread_mutex_unlock(&cloud_lock);

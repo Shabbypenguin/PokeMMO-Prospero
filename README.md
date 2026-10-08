@@ -179,11 +179,14 @@ Sign in once per console: one Google account holds the backup for every PS5 prof
 | What | When it goes up |
 |------|-----------------|
 | Your ROMs (`.nds`, `.gba`), each once | A few seconds after uploads to the ROM screen stop, and right after you sign in |
-| The playing profile's PokeMMO settings, including the remembered login | Every minute while they change, and when you choose Exit in the game |
+| The playing profile's PokeMMO settings, including the remembered login | When you choose Exit in the game, and at the next start if they changed (so closing with the PS button is caught up next time). Nothing is uploaded while you play. |
 
 Everything goes into a folder called **PokeMMO Prospero** in that Drive: `roms/` and one `profile-<number>.tar` per
 PS5 profile. It takes about as much Drive space as your ROMs (a few hundred MB for all five games). The client isn't
 backed up: it downloads again from PokeMMO by itself.
+
+Only settings changed since the last start can be lost: when the title is closed with the PS button and then deleted or
+reinstalled before it's started again.
 
 **Restoring**
 
