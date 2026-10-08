@@ -44,9 +44,11 @@ jobs:
             if git rev-parse -q --verify "refs/tags/$version" >/dev/null || gh release view "$version" >/dev/null 2>&1; then
               echo "::error::$version already exists"; exit 1
             fi
+            [[ "$version" == "v$(tr -d ' \r\n' < VERSION)" ]] || { echo "::error::VERSION says $(cat VERSION): give v$(tr -d ' \r\n' < VERSION), or change VERSION first"; exit 1; }
             git tag "$version"  # local only, so the build carries the version; the release step creates it on GitHub
           else
             version="$GITHUB_REF_NAME"
+            [[ "$version" == "v$(tr -d ' \r\n' < VERSION)" ]] || { echo "::error::tag $version but VERSION says $(cat VERSION)"; exit 1; }
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
 

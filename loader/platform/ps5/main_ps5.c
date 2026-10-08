@@ -21,7 +21,7 @@
 #include "updater.h"
 #include "upload_server.h"
 #include "cloud.h"
-#include "prospero_version.h"  // PROSPERO_VERSION, PROSPERO_TITLE_ID (generated at build time)
+#include "prospero_version.h"  // PROSPERO_VERSION (git), PROSPERO_RELEASE (VERSION), PROSPERO_TITLE_ID (generated at build time)
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <GL/gl.h>
@@ -783,7 +783,11 @@ static void drawTilesPlain(unsigned frame) {
 // What the loading screen says, from the steps and the install progress.
 static void loadingView(LoadingView *view, LoadingStep *step_view, char *detail, size_t detail_size, unsigned frame) {
     static char version[128];
-    snprintf(version, sizeof(version), "Prospero %s (%s)", LOADER_MILESTONE, PROSPERO_VERSION);
+    // The release ("v0.1.1-beta"); a build that is not exactly that release's tag also shows which commit it is.
+    if (!strcmp(PROSPERO_VERSION, "v" PROSPERO_RELEASE))
+        snprintf(version, sizeof(version), "v%s", PROSPERO_RELEASE);
+    else
+        snprintf(version, sizeof(version), "v%s (%s)", PROSPERO_RELEASE, PROSPERO_VERSION);
     for (size_t i = 0; i < STEP_COUNT; ++i) step_view[i] = (LoadingStep){steps[i].name, atomic_load(&steps[i].state)};
     *view = (LoadingView){.status = "Getting ready", .detail = detail, .version = version, .revision = client_revision,
                           .log_where = logWhere(), .steps = step_view, .step_count = STEP_COUNT, .frame = frame};
@@ -1076,7 +1080,7 @@ static void *workMain(void *argument) {
 }
 
 int main(void) {
-    say("PokeMMO-Prospero %s (build %s, %s) starting; UDP log port 18194", LOADER_MILESTONE, PROSPERO_VERSION, PROSPERO_TITLE_ID);
+    say("PokeMMO-Prospero v%s, %s (build %s, %s) starting; UDP log port 18194", PROSPERO_RELEASE, LOADER_MILESTONE, PROSPERO_VERSION, PROSPERO_TITLE_ID);
     guardInstall();
     signal(SIGPIPE, SIG_IGN);  // a write to a closed socket or pipe must fail with EPIPE, not end the title
     bool screen = screenOpen();

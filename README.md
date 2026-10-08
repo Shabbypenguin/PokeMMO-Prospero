@@ -235,7 +235,8 @@ Google Drive backup: the project's OAuth client ("TVs and Limited Input devices"
 `loader/src/cloud.c`. `make cloud-test` runs a full backup and restore against `tools/cloud_server.py`, a stand-in for
 Google's sign-in and Drive endpoints, on a PC.
 
-Releases: Actions → **release** → Run workflow, with a version such as `v0.1.0-beta`. It builds in CI and publishes a
+Releases: set the release number in `VERSION` (it's what the loading screen shows), push, then Actions → **release** →
+Run workflow with the same number, e.g. `v0.1.1-beta`. It builds in CI and publishes a
 GitHub Release with `PPSA98001.ffpfsc` and its SHA-256 sum. Pushing a `v*` tag does the same.
 
 How it works: this ports the approach [PokeMMO-NX](https://github.com/Petit-Prince-dev/PokeMMO-NX) by Petit_Prince
