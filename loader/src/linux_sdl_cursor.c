@@ -40,8 +40,8 @@ static void place(unsigned width, unsigned height) {
 // click, a tap with two fingers a right click. A tap and then a finger that lands again at once and slides drags (the left button
 // is held until it lifts). Pressing the touchpad down stays the game's button (the bag): a touch with a press is not a tap.
 // The cursor is drawn while the trackpad is in use and hides a few seconds after.
-#define PAD_UNITS_PER_SCREEN 1925.0f  // touchpad units (0..1919 x 0..1079) per screen height at slow speed (loader-30: 1540, 30% slower
-                                      // than loader-27's 1080; loader-35: 20% slower than loader-30)
+#define PAD_UNITS_PER_SCREEN 2265.0f  // touchpad units (0..1919 x 0..1079) per screen height at slow speed (loader-27: 1080;
+                                      // loader-30: 1540; loader-35: 1925; loader-37: 15% slower again)
 #define PAD_FAST_SPEED 2500.0f        // touchpad units per second from which a swipe goes the furthest
 #define PAD_FAST_GAIN 2.2f            // how much further, at that speed
 #define PAD_TAP_NS 250000000ull       // longest touch that is a tap
