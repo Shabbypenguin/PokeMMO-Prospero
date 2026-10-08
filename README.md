@@ -80,8 +80,8 @@ PokeMMO's own setup guide has the current list. This project doesn't provide or 
 |--------|------|
 | D-pad or left stick | Move, menus |
 | Cross / Circle | A (confirm, talk) / B (cancel) |
-| Square | X |
-| Triangle | Not bound (assign it in the game's controller settings if you like) |
+| Square | X (does nothing in the game today: free to rebind) |
+| Triangle | Pokédex |
 | L1 / R1 | Previous / next |
 | Options | Game menu |
 | Touchpad press | Bag |
