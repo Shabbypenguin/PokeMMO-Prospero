@@ -5,8 +5,7 @@ An unofficial effort to run the official, unmodified PokeMMO Linux client native
 > **Status: pre-beta, playable on a console.** Login, the overworld and battles work, with graphics, audio, the
 > controller, an on-screen keyboard and the touchpad as a mouse. The title downloads and updates the PokeMMO client
 > itself and takes ROMs over its own web page or FTP server. Each PS5 profile has its own PokeMMO login. An optional
-> [Google Drive backup](#google-drive-backup) keeps ROMs and logins across reinstalls (waiting on Google's review of the
-> app before it can be used). Tested on firmware 12.40 with kstuff-lite and ShadowMountPlus. Progress and open questions: [docs/plan.md](docs/plan.md), [docs/loader.md](docs/loader.md).
+> [Google Drive backup](#google-drive-backup) keeps ROMs and logins across reinstalls (in beta testing). Tested on firmware 12.40 with kstuff-lite and ShadowMountPlus. Progress and open questions: [docs/plan.md](docs/plan.md), [docs/loader.md](docs/loader.md).
 
 This project is not affiliated with or endorsed by the PokeMMO team or Sony. The PokeMMO client is **never included**:
 the console downloads it from PokeMMO. You supply ROMs you dumped from cartridges you own.
@@ -161,8 +160,8 @@ if an update fails to start, the title goes back to the previous client by itsel
 Because installing the title again erases its storage, the title can keep a copy of your ROMs and every profile's
 settings in **your own** Google Drive, and put them back after a reinstall or a launcher update. It's optional.
 
-> **Not usable yet:** Google is reviewing the app. Until it's approved, signing in fails with an access error. This
-> section describes how it works once it's live.
+> **Beta testing:** the backup is open to everyone, but it's new and has only been tested on a few consoles. Keep your
+> ROMs somewhere else too for now, and if something goes wrong, open an issue with the log lines starting `cloud:`.
 
 **Turning it on**
 
@@ -212,7 +211,7 @@ Settings a profile already has on the console are never overwritten.
 | Red bar: "PokeMMO is not installed yet" | Check the console's internet connection, close the title (PS button) and start it again. |
 | ROM screen keeps coming back | Black or White isn't there or isn't readable. The screen says what each file is; unpack zipped files first. |
 | Web page or FTP won't connect | Use the address shown on screen, from the same network. Uploads (and the FTP server) only work before the game starts. |
-| Google sign-in says access is blocked, or "not a tester" | The app is still waiting for Google's review; the backup can't be used until it's approved. |
+| Google sign-in says access is blocked | Open an issue with the message: the backup is in beta testing and this shouldn't happen. |
 | "Google hasn't verified this app" on the phone | Tap **Advanced**, then **Go to PokeMMO Prospero**. It's only the app's own folder in your Drive. |
 | ROM screen says "Google Drive: … (tried again later)" | The last backup failed (network, or Drive full). It tries again by itself; the reason is in the log on lines starting `cloud:`. |
 | The code on the TV expired | Press Circle, then Square on the ROM screen for a new code. Codes last about 15 minutes. |
