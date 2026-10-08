@@ -135,6 +135,8 @@ The cursor hides a few seconds after you stop touching the pad.
 
 - **Links** in the game (register, forgot password) open in the PS5 web browser. The PS button brings the game back.
 - **Exit** in the game's menu closes the title and goes back to the home screen.
+- **New versions:** when a newer PokeMMO Prospero is published on GitHub, a small banner at the top of the loading screen
+  says so. Install it from your homebrew store (back up to Google Drive first: installing it again erases the title's storage).
 - USB/Bluetooth keyboards and mice are not supported yet.
 
 ## Your data

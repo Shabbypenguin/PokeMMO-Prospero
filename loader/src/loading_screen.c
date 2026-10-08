@@ -71,6 +71,11 @@ void loadingScreenDraw(const LoadingView *view) {
         return;
     }
     overlayClear(BACKGROUND);
+    if (view->notice && view->notice[0]) {  // loader-39: a small banner at the top
+        float w = overlayTextWidth(view->notice, 28) + 48;
+        overlayRect(OVERLAY_WIDTH / 2 - w / 2, 36, w, 50, 0x2A2410FFu);
+        overlayTextCentered(OVERLAY_WIDTH / 2, 46, view->notice, 28, AMBER);
+    }
     overlayLogo(OVERLAY_WIDTH / 2 - 210, 150, 420);
     overlayTextCentered(OVERLAY_WIDTH / 2, 610, "PokeMMO Prospero", 64, TEXT);
     if (view->player && view->player[0]) overlayTextCentered(OVERLAY_WIDTH / 2, 688, view->player, 30, DIM);

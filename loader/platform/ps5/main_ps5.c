@@ -21,6 +21,7 @@
 #include "updater.h"
 #include "upload_server.h"
 #include "cloud.h"
+#include "release_check.h"
 #include "prospero_version.h"  // PROSPERO_VERSION (git), PROSPERO_RELEASE (VERSION), PROSPERO_TITLE_ID (generated at build time)
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
@@ -42,7 +43,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define LOADER_MILESTONE "loader-38"
+#define LOADER_MILESTONE "loader-39"
 // ps5-opengl's app heap (malloc of the loader and of everything the client allocates with malloc): from direct memory.
 const size_t ps5_opengl_heap_size = 768u << 20;
 
@@ -192,6 +193,8 @@ static char upload_address[32];
 static unsigned existing_ftp_port;
 static _Atomic bool uploads_started;
 static void scanRoms(void);
+static char release_notice[160];  // loader-39
+static _Atomic bool release_notice_set;
 // loader-36: the Google Drive backup's screens and requests (the work itself is further down, with cloud.c).
 enum { CLOUD_SCREEN_NONE, CLOUD_SCREEN_ASK, CLOUD_SCREEN_SIGNIN };
 static pthread_mutex_t cloud_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -793,7 +796,8 @@ static void loadingView(LoadingView *view, LoadingStep *step_view, char *detail,
                           .log_where = logWhere(), .steps = step_view, .step_count = STEP_COUNT, .frame = frame};
     detail[0] = 0;
     view->no_input = atomic_load(&client_started_ns) != 0;
-    view->player = player_label;  // from the client's start on, nothing reads the controller here
+    view->player = player_label;
+    view->notice = atomic_load(&release_notice_set) ? release_notice : NULL;  // from the client's start on, nothing reads the controller here
     static const char *const checks[] = {"fs.list.app0", "fs.list.roms", "fs.romread"};
     unsigned checked = 0;
     for (unsigned i = 0; i < 3; ++i) checked += stepState(checks[i]) != NOT_RUN && stepState(checks[i]) != RUNNING;
@@ -1045,6 +1049,20 @@ static void cloudBackupAtExit(void) {
     say("cloud: busy at exit: the settings go up next time");
 }
 
+// loader-39: a newer PokeMMO Prospero on GitHub: a banner on the loading screen (installing it stays the player's).
+static void *releaseCheckMain(void *argument) {
+    (void)argument;
+    char newest[64];
+    if (!releaseNewest(RELEASES_URL, newest, sizeof(newest))) return NULL;
+    bool newer = releaseCompare(newest, "v" PROSPERO_RELEASE) > 0;
+    say("release check: newest published %s, this is v%s%s", newest, PROSPERO_RELEASE, newer ? ": showing the update banner" : "");
+    if (newer) {
+        snprintf(release_notice, sizeof(release_notice), "PokeMMO Prospero %s is out: update it from your homebrew store", newest);
+        atomic_store(&release_notice_set, true);
+    }
+    return NULL;
+}
+
 // The checks and the client start run behind the screen.
 static void *workMain(void *argument) {
     (void)argument;
@@ -1055,6 +1073,8 @@ static void *workMain(void *argument) {
     snprintf(upload_address, sizeof(upload_address), "%s", platformLocalIPv4(address) ? address : "<console IP>");
     existing_ftp_port = uploadDetectFtp();
     say("upload: %s", existing_ftp_port ? "an FTP server is already running" : "no FTP server is running: the ROM screen will start one");
+    pthread_t release_check;  // loader-39: in the background; the screen shows the banner whenever it has an answer
+    if (!pthread_create(&release_check, NULL, releaseCheckMain, NULL)) pthread_detach(release_check);
     scanRoms();
     offerRestore();
     pthread_t cloud;
