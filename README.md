@@ -252,7 +252,7 @@ supplies the Linux libc, SDL3, OpenAL, EGL/GL and GTK pieces it expects, on top 
 | `scripts/build-title.sh` | assembles a native PS5 title (FSELF + `libc.prx` + `sce_sys`) that links ps5-opengl |
 | `tools/` | client download and analysis, branding generator, UDP log receiver, test servers |
 | `site/` | the project's web page and privacy page ([GitHub Pages](https://shabbypenguin.github.io/PokeMMO-Prospero/)) |
-| `docs/` | [plan](docs/plan.md), [loader](docs/loader.md); the retired hardware probe is at branch [`probe-final`](https://github.com/Shabbypenguin/PokeMMO-Prospero/tree/probe-final) |
+| `docs/` | [plan](docs/plan.md), [loader](docs/loader.md), [to do](docs/todo.md); the retired hardware probe is at branch [`probe-final`](https://github.com/Shabbypenguin/PokeMMO-Prospero/tree/probe-final) |
 
 ## Transparency
 
