@@ -1057,7 +1057,7 @@ static void *releaseCheckMain(void *argument) {
     bool newer = releaseCompare(newest, "v" PROSPERO_RELEASE) > 0;
     say("release check: newest published %s, this is v%s%s", newest, PROSPERO_RELEASE, newer ? ": showing the update banner" : "");
     if (newer) {
-        snprintf(release_notice, sizeof(release_notice), "PokeMMO Prospero %s is out: update it from your homebrew store", newest);
+        snprintf(release_notice, sizeof(release_notice), "A newer PokeMMO Prospero is out: %s", newest);
         atomic_store(&release_notice_set, true);
     }
     return NULL;
