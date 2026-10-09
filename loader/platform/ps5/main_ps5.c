@@ -43,7 +43,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define LOADER_MILESTONE "loader-39"
+#define LOADER_MILESTONE "loader-40"
 // ps5-opengl's app heap (malloc of the loader and of everything the client allocates with malloc): from direct memory.
 const size_t ps5_opengl_heap_size = 768u << 20;
 
@@ -200,6 +200,9 @@ enum { CLOUD_SCREEN_NONE, CLOUD_SCREEN_ASK, CLOUD_SCREEN_SIGNIN };
 static pthread_mutex_t cloud_lock = PTHREAD_MUTEX_INITIALIZER;
 static _Atomic int cloud_screen, cloud_answer;  // ASK: 1 sign in, 2 not now
 static _Atomic bool cloud_cancel, cloud_signin_requested, cloud_roms_dirty = true, cloud_restoring;
+static _Atomic bool cloud_signin_busy;  // loader-40: a requested sign-in is being taken care of (set before the request is cleared)
+static _Atomic uint64_t drive_offer_deadline_ns;  // loader-40: the Google Drive offer in the pause before the game starts
+static _Atomic bool drive_offer_taken;
 static _Atomic uint64_t rom_changed_ns;  // loader-36: when a file last arrived (the Drive backup waits until uploads settle)
 static void romsChanged(void) {
     scanRoms();
@@ -870,6 +873,13 @@ static void loadingView(LoadingView *view, LoadingStep *step_view, char *detail,
         view->question = question;
         view->choices = choices;
     }
+    uint64_t drive = atomic_load(&drive_offer_deadline_ns);
+    if (drive && now < drive && !view->problem) {  // loader-40: the pause before the game starts, while not signed in
+        static char choices[96];
+        snprintf(choices, sizeof(choices), "\x03 Sign in to Google Drive          (starting in %u)", (unsigned)((drive - now) / 1000000000ull) + 1);
+        view->question = "Back up your ROMs and settings to Google Drive?";
+        view->choices = choices;
+    }
 }
 // The same screen over the game's first (black) frames, on the game's thread and context.
 static void drawLoadingInGame(void) {
@@ -924,6 +934,8 @@ static void drawScreen(unsigned frame) {
     if (mode != ROM_SCREEN_NONE && (pressed & PLATFORM_PAD_SQUARE) && !cloudSignedIn()) atomic_store(&cloud_signin_requested, true);
     uint64_t offer = atomic_load(&rom_offer_deadline_ns);
     if (offer && platformMonotonicNs() < offer && (pressed & PLATFORM_PAD_SQUARE)) atomic_store(&rom_offer_taken, true);
+    uint64_t drive_offer = atomic_load(&drive_offer_deadline_ns);
+    if (drive_offer && platformMonotonicNs() < drive_offer && (pressed & PLATFORM_PAD_SQUARE)) atomic_store(&drive_offer_taken, true);
     if (!view.details && mode != ROM_SCREEN_NONE) {
         pthread_mutex_lock(&rom_lock);
         RomScan scan = rom_scan;
@@ -1010,13 +1022,16 @@ static void *cloudMain(void *argument) {
     bool profile_due = true;  // once per start (and after a sign-in): unchanged settings cost one comparison, no upload
     for (;;) {
         sceKernelUsleep(1000000);
-        if (atomic_exchange(&cloud_signin_requested, false)) {
+        if (atomic_load(&cloud_signin_requested)) {
+            atomic_store(&cloud_signin_busy, true);  // before the request is cleared: the pause before the game waits on either
+            atomic_store(&cloud_signin_requested, false);
             pthread_mutex_lock(&cloud_lock);
             if (cloudSignInScreen()) {
                 atomic_store(&cloud_roms_dirty, true);
                 profile_due = true;
             }
             pthread_mutex_unlock(&cloud_lock);
+            atomic_store(&cloud_signin_busy, false);
         }
         if (!cloudSignedIn()) continue;
         uint64_t now = platformMonotonicNs();
@@ -1047,6 +1062,23 @@ static void cloudBackupAtExit(void) {
         sceKernelUsleep(100000);
     }
     say("cloud: busy at exit: the settings go up next time");
+}
+
+// loader-40: the pause before the client starts. Signed in to Google Drive: 1.5 s with nothing shown (loader-33). Not signed in:
+// 3 s offering the sign-in (Square), the one place it is offered once the ROMs are all there; taken, the game waits for it.
+static void pauseBeforeStart(void) {
+    if (cloudSignedIn()) {
+        sceKernelUsleep(1500000);
+        return;
+    }
+    atomic_store(&drive_offer_taken, false);
+    atomic_store(&drive_offer_deadline_ns, platformMonotonicNs() + 3000000000ull);
+    while (platformMonotonicNs() < atomic_load(&drive_offer_deadline_ns) && !atomic_load(&drive_offer_taken)) sceKernelUsleep(20000);
+    atomic_store(&drive_offer_deadline_ns, 0);
+    if (!atomic_load(&drive_offer_taken)) return;
+    say("cloud: sign-in chosen before the game starts");
+    atomic_store(&cloud_signin_requested, true);
+    while (atomic_load(&cloud_signin_requested) || atomic_load(&cloud_signin_busy)) sceKernelUsleep(20000);
 }
 
 // loader-39: a newer PokeMMO Prospero on GitHub: a banner on the loading screen (installing it stays the player's).
@@ -1089,7 +1121,7 @@ static void *workMain(void *argument) {
         // The ports are free again before the game starts; marking them started keeps Square/Triangle from starting them after.
         if (atomic_exchange(&uploads_started, true)) uploadServersStop();
         applyDefaults();
-        sceKernelUsleep(1500000);  // loader-33: a quiet 1.5 s before the client starts (the controller still answers: Triangle)
+        pauseBeforeStart();  // loader-33/40: 1.5 s, or 3 s with the Google Drive offer (the controller still answers)
         pthread_t game;
         pthread_attr_t attributes;
         pthread_attr_init(&attributes);

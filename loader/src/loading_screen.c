@@ -12,6 +12,29 @@
 static const uint32_t BACKGROUND = 0x081228FFu, TEXT = 0xFFFFFFFFu, SOFT = 0xC8D6F0FFu, DIM = 0x8A9BBFFFu, FAINT = 0x5F7096FFu, BLUE = 0x5AA0E8FFu,
                       TRACK = 0x1B2B4FFFu, RED = 0xE05555FFu, AMBER = 0xF0C060FFu;
 
+static void drawQr(float x, float y, float size, const char *text);
+
+// A few controls players would not guess, and a QR code to the full list (site/controls.html on GitHub Pages).
+#define CONTROLS_URL "https://shabbypenguin.github.io/PokeMMO-Prospero/controls.html"
+static void drawControls(void) {
+    static const struct {
+        const char *button, *does;
+    } rows[] = {{"R3", "On-screen keyboard (select a text field first)"},
+                {"Touchpad", "Mouse: slide to move, tap to click, two-finger tap to right-click"},
+                {"Touchpad press", "Bag"},
+                {"L3", "Stick cursor on/off (R2 / L2 click while it is on)"}};
+    const float qr = 160, width = 1240, height = 220, x = (OVERLAY_WIDTH - width) / 2, y = 770;
+    overlayRect(x, y, width, height, 0x111D36FFu);
+    for (unsigned i = 0; i < sizeof(rows) / sizeof(rows[0]); ++i) {
+        float row = y + 22 + (float)i * 48;
+        overlayText(x + 32, row, rows[i].button, 28, TEXT);
+        overlayText(x + 280, row, rows[i].does, 28, SOFT);
+    }
+    float qr_x = x + width - qr - 24;
+    drawQr(qr_x, y + 14, qr, CONTROLS_URL);
+    overlayTextCentered(qr_x + qr / 2, y + 182, "All controls", 24, DIM);
+}
+
 static uint32_t stepColor(int state, unsigned frame) {
     switch (state) {
         case LOADING_PASS: return 0x26BF4DFFu;
@@ -76,29 +99,30 @@ void loadingScreenDraw(const LoadingView *view) {
         overlayRect(OVERLAY_WIDTH / 2 - w / 2, 36, w, 50, 0x2A2410FFu);
         overlayTextCentered(OVERLAY_WIDTH / 2, 46, view->notice, 28, AMBER);
     }
-    overlayLogo(OVERLAY_WIDTH / 2 - 210, 150, 420);
-    overlayTextCentered(OVERLAY_WIDTH / 2, 610, "PokeMMO Prospero", 64, TEXT);
-    if (view->player && view->player[0]) overlayTextCentered(OVERLAY_WIDTH / 2, 688, view->player, 30, DIM);
-    const float bar_x = 560, bar_y = 740, bar_w = 800, bar_h = 12;
+    overlayLogo(OVERLAY_WIDTH / 2 - 130, 110, 260);  // loader-40: smaller, to make room for the controls
+    overlayTextCentered(OVERLAY_WIDTH / 2, 392, "PokeMMO Prospero", 60, TEXT);
+    if (view->player && view->player[0]) overlayTextCentered(OVERLAY_WIDTH / 2, 466, view->player, 30, DIM);
+    const float bar_x = 560, bar_y = 520, bar_w = 800, bar_h = 12;
     float fraction = view->fraction < 0 ? 0 : view->fraction > 1 ? 1 : view->fraction;
     overlayRect(bar_x, bar_y, bar_w, bar_h, TRACK);
     if (view->problem) {
         overlayRect(bar_x, bar_y, bar_w * (fraction > 0.05f ? fraction : 0.05f), bar_h, RED);
-        overlayTextCentered(OVERLAY_WIDTH / 2, 790, view->problem, 44, TEXT);
-        if (view->advice) drawWrapped(860, view->advice, 32, 1100, 0xA8B8D8FFu);
+        overlayTextCentered(OVERLAY_WIDTH / 2, 566, view->problem, 44, TEXT);
+        if (view->advice) drawWrapped(634, view->advice, 32, 1100, 0xA8B8D8FFu);
     } else if (view->question) {
         overlayRect(bar_x, bar_y, bar_w * fraction, bar_h, BLUE);
-        overlayTextCentered(OVERLAY_WIDTH / 2, 790, view->question, 40, TEXT);
-        if (view->choices) overlayTextCentered(OVERLAY_WIDTH / 2, 855, view->choices, 34, SOFT);
+        overlayTextCentered(OVERLAY_WIDTH / 2, 566, view->question, 40, TEXT);
+        if (view->choices) overlayTextCentered(OVERLAY_WIDTH / 2, 630, view->choices, 34, SOFT);
     } else {
         overlayRect(bar_x, bar_y, bar_w * fraction, bar_h, BLUE);
         const char *status = view->status ? view->status : "";
         char line[128];
         snprintf(line, sizeof(line), "%s%.*s", status, (int)((view->frame / 30) % 4), "...");
-        overlayText(OVERLAY_WIDTH / 2 - overlayTextWidth(status, 40) / 2, 790, line, 40, SOFT);  // the dots do not move the words
-        if (view->detail && view->detail[0]) overlayTextCentered(OVERLAY_WIDTH / 2, 850, view->detail, 32, DIM);
-        if (view->warning) overlayTextCentered(OVERLAY_WIDTH / 2, 910, view->warning, 30, AMBER);
+        overlayText(OVERLAY_WIDTH / 2 - overlayTextWidth(status, 40) / 2, 566, line, 40, SOFT);  // the dots do not move the words
+        if (view->detail && view->detail[0]) overlayTextCentered(OVERLAY_WIDTH / 2, 626, view->detail, 32, DIM);
     }
+    if (view->warning && !view->problem && !view->question) overlayTextCentered(OVERLAY_WIDTH / 2, 700, view->warning, 30, AMBER);
+    drawControls();
     if (!view->no_input) overlayText(48, 1020, "Hold \x04 for details", 28, view->problem ? SOFT : FAINT);
     if (view->version) overlayText(OVERLAY_WIDTH - 48 - overlayTextWidth(view->version, 26), 990, view->version, 26, FAINT);
     if (view->revision && view->revision[0]) {

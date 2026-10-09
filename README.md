@@ -74,6 +74,9 @@ PokeMMO's own setup guide has the current list. This project doesn't provide or 
 
 ## Controls
 
+The loading screen lists the controls people tend to miss, with a QR code to the
+[full controls page](https://shabbypenguin.github.io/PokeMMO-Prospero/controls.html).
+
 ### In the game (default layout)
 
 | Button | Does |
@@ -119,6 +122,7 @@ The cursor hides a few seconds after you stop touching the pad.
 | Button | Does |
 |--------|------|
 | Hold Triangle | Startup details: each check's result and where to get the full log |
+| Square (the 3 seconds before the game starts, while not signed in) | Sign in to Google Drive for the backup |
 | Square (during the 5-second "games found" countdown) | ROM screen, to add optional games; Cross then starts the game |
 | Cross / Circle | Answer the update question (download / skip); it downloads by itself after a countdown |
 | Cross / Circle | Fresh install: answer "Restore from Google Drive?" (sign in / not now) |
@@ -165,8 +169,9 @@ settings in **your own** Google Drive, and put them back after a reinstall or a 
 
 **Turning it on**
 
-1. On the ROM screen, press **Square** ("Back up your ROMs and settings to Google Drive"). On a fresh install you can also
-   answer yes to "Restore your ROMs and settings from Google Drive?".
+1. Press **Square** when the loading screen asks "Back up your ROMs and settings to Google Drive?". It asks for 3 seconds
+   just before the game starts, on every start until you're signed in. The ROM screen offers the same with Square, and
+   on a fresh install you can also answer yes to "Restore your ROMs and settings from Google Drive?".
 2. The TV shows an address and a code. On your phone or computer, open `google.com/device` (or scan the QR code), sign
    in to Google and enter the code.
 3. Allow PokeMMO Prospero to use its own files in your Drive. The TV notices by itself and carries on.

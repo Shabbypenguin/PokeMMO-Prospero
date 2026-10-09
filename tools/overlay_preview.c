@@ -83,13 +83,13 @@ int main(int argc, char **argv) {
 
     static const LoadingStep steps[] = {{"fs.list.app0", 1}, {"fs.list.roms", 1}, {"fs.romread", 1}, {"sys.modules", 1}, {"net.https", 3},
                                         {"client.install", 4}, {"client.map", 0}, {"client.start", 0}, {"client.end", 0}};
-    LoadingView view = {.fraction = 0.35f, .status = "Installing PokeMMO", .detail = "212 of 498 MB", .version = "v0.1.2-beta",
-                        .revision = "32920", .player = "Playing as Shabby", .notice = "A newer PokeMMO Prospero is out: v0.2.0-beta", .log_where = "http://192.168.1.50:8080/log (in a browser)", .steps = steps, .step_count = 9, .frame = 70};
+    LoadingView view = {.fraction = 0.35f, .status = "Installing PokeMMO", .detail = "212 of 498 MB", .version = "v1.0.1",
+                        .revision = "32920", .player = "Playing as Shabby", .notice = "A newer PokeMMO Prospero is out: v1.0.2", .log_where = "http://192.168.1.50:8080/log (in a browser)", .steps = steps, .step_count = 9, .frame = 70};
     struct {
         const char *name;
         void (*change)(LoadingView *);
-    } screens[] = {{"loading-install", NULL}, {"loading-problem", NULL}, {"loading-details", NULL}, {"loading-update", NULL}, {"loading-rom-offer", NULL}};
-    for (unsigned i = 0; i < 5; ++i) {
+    } screens[] = {{"loading-install", NULL}, {"loading-problem", NULL}, {"loading-details", NULL}, {"loading-update", NULL}, {"loading-rom-offer", NULL}, {"loading-drive-offer", NULL}};
+    for (unsigned i = 0; i < 6; ++i) {
         LoadingView v = view;
         if (i == 1) {
             v.problem = "PokeMMO is not installed yet";
@@ -106,6 +106,12 @@ int main(int argc, char **argv) {
             v.fraction = 0.6f;
             v.question = "3 of 5 games found";
             v.choices = "\x03 Add more ROMs          (starting in 4)";
+        }
+        if (i == 5) {  // loader-40: the pause before the game starts, while not signed in to Google Drive
+            v.fraction = 0.6f;
+            v.notice = NULL;
+            v.question = "Back up your ROMs and settings to Google Drive?";
+            v.choices = "\x03 Sign in to Google Drive          (starting in 2)";
         }
         overlayBegin(W, H);
         loadingScreenDraw(&v);
