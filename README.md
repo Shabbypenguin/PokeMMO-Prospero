@@ -2,7 +2,7 @@
 
 An unofficial effort to run the official, unmodified PokeMMO Linux client natively on a jailbroken PS5.
 
-> **Status: pre-beta, playable on a console.** Login, the overworld and battles work, with graphics, audio, the
+> **Playable on a console.** Login, the overworld and battles work, with graphics, audio, the
 > controller, an on-screen keyboard and the touchpad as a mouse. The title downloads and updates the PokeMMO client
 > itself and takes ROMs over its own web page or FTP server. Each PS5 profile has its own PokeMMO login. An optional
 > [Google Drive backup](#google-drive-backup) keeps ROMs and logins across reinstalls. Tested on firmware 12.40 with kstuff-lite and ShadowMountPlus. Progress and open questions: [docs/plan.md](docs/plan.md), [docs/loader.md](docs/loader.md).
@@ -249,7 +249,7 @@ GitHub Release with `PPSA98001.ffpfsc`, `PPSA98001.zip` (the app folder, for the
 How it works: this ports the approach [PokeMMO-NX](https://github.com/Petit-Prince-dev/PokeMMO-NX) by Petit_Prince
 uses on the Nintendo Switch. A small C loader maps PokeMMO's own Linux executable (a GraalVM native image) and
 supplies the Linux libc, SDL3, OpenAL, EGL/GL and GTK pieces it expects, on top of the PS5's FreeBSD-derived OS, with
-[ps5-opengl](https://github.com/blackbearreloaded/ps5-opengl) (Mesa) providing OpenGL. Details:
+[ps5-opengl](https://github.com/darkxex/ps5-opengl) (Mesa) providing OpenGL. Details:
 [docs/loader.md](docs/loader.md); what comes from where: [CREDITS.md](CREDITS.md).
 
 | Path | What |
