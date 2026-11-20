@@ -7,6 +7,9 @@
 #include <elf.h>
 #include <limits.h>
 #include <string.h>
+#ifndef PT_GNU_RELRO
+#define PT_GNU_RELRO 0x6474e552
+#endif
 
 static bool readAt(FILE *file, uint64_t size, uint64_t offset, void *out, size_t bytes) {
     return offset <= size && bytes <= size - offset && offset <= LONG_MAX && fseek(file, (long)offset, SEEK_SET) == 0 && fread(out, 1, bytes, file) == bytes;
@@ -99,6 +102,13 @@ bool elfReadLayout(const char *path, ElfLayout *layout, bool library) {
             layout->tls_file_bytes = program.p_filesz;
             layout->tls_memory_bytes = program.p_memsz;
             layout->tls_alignment = program.p_align ? program.p_align : 1;
+            continue;
+        }
+        if (program.p_type == PT_GNU_RELRO) {
+            if (program.p_memsz <= UINT64_MAX - program.p_vaddr) {
+                layout->relro_vaddr = program.p_vaddr;
+                layout->relro_bytes = program.p_memsz;
+            }
             continue;
         }
         if (program.p_type != PT_LOAD || !program.p_memsz) continue;

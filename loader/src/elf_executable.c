@@ -38,6 +38,32 @@ static uint32_t flagsIn(const ElfLayout *layout, uint64_t low, uint64_t high, bo
     return flags;
 }
 
+// The final protection of the system page [low, high), or -1 when it cannot have one. A page that would need to be writable
+// and executable at once cannot exist on the PS5. Small libraries linked for 4 KiB pages put code and their RELRO data
+// (.init_array, .dynamic, .got: relocated while staging, never written afterwards) on one 16 KiB page; such a page is
+// mapped read+execute. Pages that are not writable and executable keep the union of their segments' flags.
+static int pageProtection(const ElfLayout *layout, uint64_t low, uint64_t high, bool *relro_relaxed) {
+    bool covered = false;
+    uint32_t flags = flagsIn(layout, low, high, &covered);
+    *relro_relaxed = false;
+    if (!covered) return PLATFORM_PROT_NONE;
+    if ((flags & PF_W) && (flags & PF_X)) {
+        uint64_t relro_low = layout->relro_vaddr, relro_high = layout->relro_vaddr + layout->relro_bytes;
+        flags = 0;
+        for (unsigned i = 0; i < layout->count; ++i) {
+            const ElfLoadSegment *segment = &layout->segments[i];
+            uint64_t first = segment->vaddr > low ? segment->vaddr : low;
+            uint64_t end = segment->vaddr + segment->memory_bytes < high ? segment->vaddr + segment->memory_bytes : high;
+            if (first >= end) continue;
+            bool relro_only = layout->relro_bytes && first >= relro_low && end <= relro_high;
+            flags |= (segment->flags & PF_W) && relro_only ? segment->flags & ~(uint32_t)PF_W : segment->flags;
+        }
+        if ((flags & PF_W) && (flags & PF_X)) return -1;
+        *relro_relaxed = true;
+    }
+    return PLATFORM_PROT_READ | ((flags & PF_W) ? PLATFORM_PROT_WRITE : 0) | ((flags & PF_X) ? PLATFORM_PROT_EXEC : 0);
+}
+
 static bool openImage(const char *path, ElfExecutable *mapped, ElfImportResolver resolver, void *context, const ElfStageOptions *options) {
     bool library = options && options->library;
     memset(mapped, 0, sizeof(*mapped));
@@ -122,23 +148,20 @@ static bool openImage(const char *path, ElfExecutable *mapped, ElfImportResolver
         mapped->exports[i].type = staged.exports[i].type;
     }
 
-    // Final protections, one system page at a time: the union of the segments on the page. A page that would need to be
-    // writable and executable at once cannot exist (the PS5 refuses to run such pages).
+    // Final protections, one system page at a time (pageProtection).
     for (size_t offset = 0; offset < span;) {
-        bool covered = false;
-        uint32_t flags = flagsIn(layout, layout->minimum_vaddr + offset, layout->minimum_vaddr + offset + page, &covered);
-        if ((flags & PF_W) && (flags & PF_X)) {
+        bool relaxed = false;
+        int protection = pageProtection(layout, layout->minimum_vaddr + offset, layout->minimum_vaddr + offset + page, &relaxed);
+        if (protection < 0) {
             diagnosticsTrace("elf.mapping.page=WRITABLE_AND_EXECUTABLE offset=0x%zx", offset);
             goto done;
         }
-        int protection = !covered ? PLATFORM_PROT_NONE
-                                  : PLATFORM_PROT_READ | ((flags & PF_W) ? PLATFORM_PROT_WRITE : 0) | ((flags & PF_X) ? PLATFORM_PROT_EXEC : 0);
+        if (relaxed) diagnosticsTrace("elf.mapping.page=RELRO_READ_ONLY offset=0x%zx", offset);
         size_t run = offset + page;
-        while (run < span) {
-            uint32_t next = flagsIn(layout, layout->minimum_vaddr + run, layout->minimum_vaddr + run + page, &covered);
-            int next_protection =
-                !covered ? PLATFORM_PROT_NONE : PLATFORM_PROT_READ | ((next & PF_W) ? PLATFORM_PROT_WRITE : 0) | ((next & PF_X) ? PLATFORM_PROT_EXEC : 0);
-            if (next_protection != protection || ((next & PF_W) && (next & PF_X))) break;
+        while (!relaxed && run < span) {
+            bool next_relaxed = false;
+            int next_protection = pageProtection(layout, layout->minimum_vaddr + run, layout->minimum_vaddr + run + page, &next_relaxed);
+            if (next_protection != protection || next_relaxed) break;
             run += page;
         }
         if (protection != (PLATFORM_PROT_READ | PLATFORM_PROT_WRITE)) {

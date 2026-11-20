@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT AND GPL-3.0-or-later
 // Adapted from PokeMMO-NX (https://github.com/Petit-Prince-dev/PokeMMO-NX, include/elf_layout.h)
 // Copyright (c) Petit_Prince, MIT license (LICENSES/PokeMMO-NX-MIT.txt). PS5 changes: PokeMMO-Prospero contributors.
-// Changes: none.
+// Changes: PT_GNU_RELRO is recorded (see relro_vaddr).
 #pragma once
 #include <stdbool.h>
 #include <stdint.h>
@@ -24,6 +24,8 @@ typedef struct {
     unsigned program_header_count;
     bool has_tls;
     uint64_t tls_file_offset, tls_file_bytes, tls_memory_bytes, tls_alignment;
+    // PT_GNU_RELRO: writable data that is only written while relocating (.init_array, .dynamic, .got...). relro_bytes 0: none.
+    uint64_t relro_vaddr, relro_bytes;
 } ElfLayout;
 
 // The DT_NEEDED names of a shared object, read from the file (so the libraries it needs can be loaded before its own
