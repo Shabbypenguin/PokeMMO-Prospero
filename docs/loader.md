@@ -75,7 +75,7 @@ their questions and no longer run.
 | Touchpad: tap / two-finger tap | Left click / right click |
 | Touchpad: tap, then touch again and slide | Drag (the left button is held until the finger lifts) |
 | Touchpad: press down | Still the game's button (the bag); a press is never a click |
-| Left stick | Moves like the d-pad: the direction it leans most, from halfway out (loader-28) |
+| Left stick, d-pad | The client's own: it moves with the stick and uses the d-pad for its hotkeys (the loader turned the stick into d-pad presses from loader-28 until client revision 35119) |
 | L3 | Stick cursor on/off: the left stick moves the cursor, R2 / L2 click left / right, the game sees an idle controller |
 | R3 | On-screen keyboard on/off (select the text field first) |
 | Keyboard up: d-pad / left stick, Cross | Move, type the highlighted key |

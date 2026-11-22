@@ -81,7 +81,8 @@ The loading screen lists the controls people tend to miss, with a QR code to the
 
 | Button | Does |
 |--------|------|
-| D-pad or left stick | Move, menus |
+| Left stick | Move, menus |
+| D-pad | The game's hotkeys and menus (set them in the game's controller settings) |
 | Cross / Circle | A (confirm, talk) / B (cancel) |
 | Square | X (does nothing in the game today: free to rebind) |
 | Triangle | Pokédex |

@@ -610,8 +610,9 @@ static void pumpInput(void) {
             snapshot.buttons = 0;
             memset(snapshot.axes, 0, sizeof(snapshot.axes));
         } else {
-            linuxSdlCursorUpdate(&snapshot, width, height);  // with the stick cursor on, the stick is the cursor's (axes zeroed)
-            linuxSdlInputStickToDpad(&snapshot);
+            // With the stick cursor on, the stick is the cursor's (axes zeroed). Otherwise the client has the stick and the d-pad as
+            // they are: since revision 35119 it moves with the stick itself and uses the d-pad for its hotkeys.
+            linuxSdlCursorUpdate(&snapshot, width, height);
         }
         linuxSdlEventsUpdate(&snapshot);
     }
