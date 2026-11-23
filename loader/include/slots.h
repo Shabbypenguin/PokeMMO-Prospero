@@ -14,7 +14,8 @@
 typedef struct {
     char active, previous;  // 'a', 'b' or 0
     bool trial;
-    char failed[32];        // a revision that did not start: not offered again
+    char failed[32];        // a revision that did not start: not offered again by the same PokeMMO Prospero release
+    char failed_by[32];     // the PokeMMO Prospero release (VERSION) that saw it fail; another release offers it again
 } SlotState;
 
 void slotsInit(const char *root);

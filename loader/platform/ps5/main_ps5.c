@@ -384,6 +384,7 @@ static void gameShowedPicture(void) {
     if (slot_state.trial) {
         slot_state.trial = false;
         slot_state.failed[0] = 0;
+        slot_state.failed_by[0] = 0;
         old = slot_state.previous;
         slot_state.previous = 0;
         slotsSave(&slot_state);
@@ -400,6 +401,7 @@ static bool revertTrial(const char *why) {
     bool reverted = false;
     if (slot_state.trial && slot_state.previous && slotsRevision(slot_state.previous, revision, sizeof(revision))) {
         snprintf(slot_state.failed, sizeof(slot_state.failed), "%s", active_revision);
+        snprintf(slot_state.failed_by, sizeof(slot_state.failed_by), "%s", PROSPERO_RELEASE);
         char failed = slot_state.active;
         slot_state.active = slot_state.previous;
         slot_state.previous = failed;
@@ -416,6 +418,15 @@ static void prepareSlots(void) {
     slotsInit(ROOT);
     slotsMigrate();
     if (!slotsLoad(&slot_state)) memset(&slot_state, 0, sizeof(slot_state));
+    // A revision that failed under another release (or before failed_by existed) gets another chance: the new release may be
+    // the one that supports it (client 35119 failed under 1.0.2 and was never offered to 1.0.5).
+    if (slot_state.failed[0] && strcmp(slot_state.failed_by, PROSPERO_RELEASE)) {
+        say("slots: revision %s did not start under PokeMMO Prospero %s: offered again to %s", slot_state.failed,
+            slot_state.failed_by[0] ? slot_state.failed_by : "(an older release)", PROSPERO_RELEASE);
+        slot_state.failed[0] = 0;
+        slot_state.failed_by[0] = 0;
+        if (slot_state.active) slotsSave(&slot_state);
+    }
     if (slot_state.trial) {
         char failed[64];
         snprintf(failed, sizeof(failed), "%s", "");

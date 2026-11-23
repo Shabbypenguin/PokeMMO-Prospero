@@ -63,16 +63,17 @@ bool slotsLoad(SlotState *state) {
         if (!strncmp(line, "previous=", 9)) state->previous = line[9] == 'a' || line[9] == 'b' ? line[9] : 0;
         if (!strncmp(line, "trial=", 6)) state->trial = line[6] == '1';
         if (!strncmp(line, "failed=", 7)) snprintf(state->failed, sizeof(state->failed), "%s", line + 7);
+        if (!strncmp(line, "failed_by=", 10)) snprintf(state->failed_by, sizeof(state->failed_by), "%s", line + 10);
     }
     return state->active != 0;
 }
 bool slotsSave(const SlotState *state) {
-    char path[300], text[160];
+    char path[300], text[200];
     snprintf(path, sizeof(path), "%s/slots", root);
     makeFolders(path);
     snprintf(path, sizeof(path), "%s/slots/state", root);
-    snprintf(text, sizeof(text), "active=%c\nprevious=%c\ntrial=%d\nfailed=%s\n", state->active ? state->active : '-', state->previous ? state->previous : '-',
-             state->trial ? 1 : 0, state->failed);
+    snprintf(text, sizeof(text), "active=%c\nprevious=%c\ntrial=%d\nfailed=%s\nfailed_by=%s\n", state->active ? state->active : '-',
+             state->previous ? state->previous : '-', state->trial ? 1 : 0, state->failed, state->failed_by);
     bool ok = writeText(path, text);
     diagnosticsTrace("slots: active=%c previous=%c trial=%d failed=%s%s", state->active ? state->active : '-', state->previous ? state->previous : '-',
                      state->trial, state->failed[0] ? state->failed : "-", ok ? "" : " (NOT SAVED)");
