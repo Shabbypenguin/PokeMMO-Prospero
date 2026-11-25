@@ -118,12 +118,11 @@ if [[ -n $assets ]]; then
 fi
 
 if [[ -n $branding ]]; then
-    for file in icon0.png background.dds; do
+    for file in icon0.png background.dds keystone; do
         [[ -s $root/$branding/$file ]] || { echo "branding file missing: $branding/$file" >&2; exit 2; }
     done
     rm -f "$app/sce_sys/"{snd0.at9,background-source.png,launch-background-source.png}
     cp "$root/$branding/icon0.png" "$app/sce_sys/icon0.png"
-    cp "$root/$branding/keystone" "$app/sce_sys/keystone"
     cp "$root/$branding/background.dds" "$app/sce_sys/pic0.dds"
     cp "$root/$branding/background.dds" "$app/sce_sys/pic1.dds"
 fi
@@ -188,7 +187,11 @@ fi
 make -C "$app" --no-print-directory app
 
 dist="$app/dist/$title_id"
-for required in eboot.bin sce_module/libc.prx sce_sys/param.json; do
+if [[ -n $branding ]]; then
+    cp "$root/$branding/keystone" "$dist/sce_sys/keystone"
+fi
+for required in eboot.bin sce_module/libc.prx sce_sys/param.json sce_sys/keystone; do
     [[ -s $dist/$required ]] || { echo "missing output: $required" >&2; exit 1; }
 done
+(cd "$app/dist" && rm -f "$title_id.zip" && zip -rq "$title_id.zip" "$title_id")
 printf '\nTitle folder: %s\nZip:          %s\n' "${dist#"$root"/}" "${dist#"$root"/}.zip"
