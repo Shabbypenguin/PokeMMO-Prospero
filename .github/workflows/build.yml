@@ -46,7 +46,8 @@ jobs:
 
       - name: Check title contents
         run: |
-          set -euo pipefail
+          set -euxo pipefail
+          ls -la
           for file in eboot.bin sce_module/libc.prx sce_sys/param.json sce_sys/keystone; do
             test -s "build/titles/PPSA98001/dist/PPSA98001/$file"
           done
