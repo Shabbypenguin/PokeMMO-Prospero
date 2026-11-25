@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Publishes a GitHub Release: builds the title in the pokemmo-ps5-buildenv image and attaches the .ffpfsc image, .zip, and .pkg. Start it from the Actions tab (Release > Run workflow, give a version such as v0.1.0-beta), or push a tag
-# v*. GitHub creates the tag itself on a manual run. The PokeMMO client is never downloaded or attached.
+# Publishes a GitHub Release: builds the title in the pokemmo-ps5-buildenv image and attaches the .ffpfsc image, .zip, and .pkg.
 name: release
 
 on:
@@ -30,7 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # build-title.sh names the build with `git describe --tags`
+          fetch-depth: 0
 
       - name: Work out the version
         env:
@@ -45,14 +44,13 @@ jobs:
               echo "::error::$version already exists"; exit 1
             fi
             [[ "$version" == "v$(tr -d ' \r\n' < VERSION)" ]] || { echo "::error::VERSION says $(cat VERSION): give v$(tr -d ' \r\n' < VERSION), or change VERSION first"; exit 1; }
-            git tag "$version"  # local only, so the build carries the version; the release step creates it on GitHub
+            git tag "$version"
           else
             version="$GITHUB_REF_NAME"
             [[ "$version" == "v$(tr -d ' \r\n' < VERSION)" ]] || { echo "::error::tag $version but VERSION says $(cat VERSION)"; exit 1; }
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
 
-      # Registry names must be lowercase; the owner name may not be (Shabbypenguin).
       - name: Pull build environment image
         env:
           OWNER: ${{ github.repository_owner }}
@@ -67,29 +65,23 @@ jobs:
         run: |
           set -euo pipefail
           docker run --rm -v "$PWD:/work" -w /work "$IMAGE" bash -c "make loader && make image-loader"
-          mkdir -p /tmp/fpkg-builder
-          curl -fsSL https://github.com/thanhsondev/PSVIETHOA-FPKG-Builder/releases/download/v3.2.0/PSVIETHOA-FPKG-Builder-3.2.0-linux-x64.tar.gz \
-            | tar -xz -C /tmp/fpkg-builder --strip-components=1
+          mkdir -p /tmp/fpkg-builder /tmp/fpkg-out
+          curl -fsSL https://github.com/thanhsondev/PSVIETHOA-FPKG-Builder/releases/download/v3.2.0/PSVIETHOA-FPKG-Builder-3.2.0-linux-x64.tar.gz | tar -xz -C /tmp/fpkg-builder --strip-components=1
           chmod +x /tmp/fpkg-builder/fpkg-cli
-          /tmp/fpkg-builder/fpkg-cli build \
-            --source build/titles/PPSA98001/dist/PPSA98001 \
-            --output "$GITHUB_WORKSPACE" \
-            --overwrite
+          /tmp/fpkg-builder/fpkg-cli build --source build/titles/PPSA98001/dist/PPSA98001 --output /tmp/fpkg-out --overwrite
+          mv /tmp/fpkg-out/*.pkg PPSA98001.pkg
 
       - name: Check the outputs
         run: |
           set -euo pipefail
-          for file in eboot.bin sce_module/libc.prx sce_sys/param.json sce_sys/keystone; do
-            test -s "build/titles/PPSA98001/dist/PPSA98001/$file"
-          done
+          test -s build/titles/PPSA98001/dist/PPSA98001/eboot.bin
+          test -s build/titles/PPSA98001/dist/PPSA98001/sce_module/libc.prx
+          test -s build/titles/PPSA98001/dist/PPSA98001/sce_sys/param.json
           test -s dist/PPSA98001.ffpfsc
           test -s PPSA98001.pkg
           grep -q "\"$VERSION\"" build/titles/PPSA98001/src/prospero_version.h || { echo "::error::the build does not carry $VERSION"; exit 1; }
-          # Catalog-installable zip: the PPSA98001/ app folder at the archive root. Written to the runner's checkout
-          # (GITHUB_WORKSPACE), not into dist/, which belongs to root (made inside the container).
           ( cd build/titles/PPSA98001/dist && zip -r -q "$GITHUB_WORKSPACE/PPSA98001.zip" PPSA98001 )
-          # dist/ belongs to root: the sums go in the runner's own checkout.
-          (cd dist && sha256sum PPSA98001.ffpfsc) > SHA256SUMS.txt
+          ( cd dist && sha256sum PPSA98001.ffpfsc ) > SHA256SUMS.txt
           sha256sum PPSA98001.zip PPSA98001.pkg >> SHA256SUMS.txt
 
       - name: Publish the release
