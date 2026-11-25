@@ -43,7 +43,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define LOADER_MILESTONE "loader-41"
+#define LOADER_MILESTONE "loader-42"
 // ps5-opengl's app heap (malloc of the loader and of everything the client allocates with malloc): from direct memory.
 const size_t ps5_opengl_heap_size = 768u << 20;
 
@@ -180,6 +180,9 @@ static void chooseStorage(void) {
         snprintf(rom_folder, sizeof(rom_folder), "%s", "/download0/root/roms");
         mkdir(rom_folder, 0755);
     }
+    // loader-42: a folder install's roms folder is made here too. A fresh install has none, so the Google Drive restore had
+    // nowhere to write ("a download stopped after 0 bytes") and the scan said the folder cannot be read.
+    if (title_writable) mkdir(rom_folder, 0755);
     say("storage: title folder %s; ROMs in %s; log in %s", title_writable ? "writable (folder install)" : "read-only (image install)", rom_folder,
         platformLogPath()[0] ? platformLogPath() : "(none)");
 }

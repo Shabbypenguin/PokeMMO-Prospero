@@ -560,6 +560,12 @@ static bool download(const char *id, const char *path, long long size) {
             return false;
         }
         int fd = open(temporary, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (fd < 0) {
+            int open_error = errno;
+            platformHttpClose(h);
+            setError("cannot write %s (errno %d)", temporary, open_error);
+            return false;
+        }
         static char buffer[1u << 20];
         long long have = 0;
         bool ok = fd >= 0;
