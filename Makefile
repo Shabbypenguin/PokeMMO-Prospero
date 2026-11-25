@@ -9,12 +9,14 @@ LOADER_TITLE_ID ?= PPSA98001
 # PROBE_LOG_HOST, its old name, still works.
 LOG_HOST ?= $(PROBE_LOG_HOST)
 CLIENT_ZIP ?= private/PokeMMO-Client.zip
+FPKG_CLI ?= fpkg-cli
 
-.PHONY: help env-check cloud-test loader host-loader host-run overlay-preview updater-test image-loader fetch-client analyze clean
+.PHONY: help env-check cloud-test loader host-loader host-run overlay-preview updater-test image-loader fpkg-loader fetch-client analyze clean
 
 help:
 	@echo "make loader         build the title (folder install, dist/pokemmo-prospero-loader-$(LOADER_TITLE_ID).zip; LOG_HOST=192.168.x.y optional)"
 	@echo "make image-loader   the loader as a .ffpfsc image (dist/)"
+	@echo "make fpkg-loader    the loader as a PS5 FPKG (.pkg) in dist/"
 	@echo "make host-loader    build the same loader for this Linux PC (build/host/prospero-host); host-run runs the client in it"
 	@echo "make fetch-client   download the PokeMMO client into $(CLIENT_ZIP) (never committed)"
 	@echo "make analyze        check a client release against what the loader supports"
@@ -45,6 +47,11 @@ image-loader: loader
 # The loader on this PC (no console needed): same adapters, platform/host. Needs a C compiler and zlib headers.
 host-loader:
 	$(MAKE) -f loader/Makefile.host --no-print-directory
+# The same title as a PS5 FPKG (.pkg) built from the staged dist folder.
+fpkg-loader: loader
+	@mkdir -p dist
+	$(FPKG_CLI) build --source build/titles/$(LOADER_TITLE_ID)/dist/$(LOADER_TITLE_ID) --output dist --overwrite
+	@echo "FPKG: dist/$(LOADER_TITLE_ID).pkg"
 
 # Pictures of the loading screen, keyboard and link box (build/overlay-preview/*.ppm), drawn with Mesa (libegl-dev, libgl-dev).
 OVERLAY_SOURCES := loader/src/overlay.c loader/src/overlay_assets.c loader/src/loading_screen.c loader/src/osk.c loader/src/link_box.c loader/src/qrcodegen.c \
