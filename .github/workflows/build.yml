@@ -34,14 +34,16 @@ jobs:
         run: |
           set -euo pipefail
           docker run --rm -v "$PWD:/work" -w /work "$IMAGE" bash -c "make loader && make image-loader"
-          mkdir -p /tmp/fpkg-builder
+          mkdir -p /tmp/fpkg-builder /tmp/fpkg-out
           curl -fsSL https://github.com/thanhsondev/PSVIETHOA-FPKG-Builder/releases/download/v3.2.0/PSVIETHOA-FPKG-Builder-3.2.0-linux-x64.tar.gz \
             | tar -xz -C /tmp/fpkg-builder --strip-components=1
           chmod +x /tmp/fpkg-builder/fpkg-cli
           /tmp/fpkg-builder/fpkg-cli build \
             --source build/titles/PPSA98001/dist/PPSA98001 \
-            --output "$GITHUB_WORKSPACE" \
+            --output /tmp/fpkg-out \
             --overwrite
+          ls -lh /tmp/fpkg-out
+          cp /tmp/fpkg-out/*.pkg "$GITHUB_WORKSPACE/PPSA98001.pkg"
 
       - name: Check title contents
         run: |
