@@ -123,6 +123,7 @@ if [[ -n $branding ]]; then
     done
     rm -f "$app/sce_sys/"{snd0.at9,background-source.png,launch-background-source.png}
     cp "$root/$branding/icon0.png" "$app/sce_sys/icon0.png"
+    cp "$root/$branding/keystone" "$app/sce_sys/keystone"
     cp "$root/$branding/background.dds" "$app/sce_sys/pic0.dds"
     cp "$root/$branding/background.dds" "$app/sce_sys/pic1.dds"
 fi
