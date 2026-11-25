@@ -42,8 +42,7 @@ jobs:
             --source build/titles/PPSA98001/dist/PPSA98001 \
             --output /tmp/fpkg-out \
             --overwrite
-          ls -lh /tmp/fpkg-out
-          cp /tmp/fpkg-out/*.pkg "$GITHUB_WORKSPACE/PPSA98001.pkg"
+          cp /tmp/fpkg-out/*.pkg "$PWD/PPSA98001.pkg"
 
       - name: Check title contents
         run: |
