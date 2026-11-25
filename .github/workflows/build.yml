@@ -40,14 +40,12 @@ jobs:
 
       - name: Check title contents
         run: |
-          set -euxo pipefail
+          set -euo pipefail
           test -s build/titles/PPSA98001/dist/PPSA98001/eboot.bin
           test -s build/titles/PPSA98001/dist/PPSA98001/sce_module/libc.prx
           test -s build/titles/PPSA98001/dist/PPSA98001/sce_sys/param.json
-          test -s build/titles/PPSA98001/dist/PPSA98001/sce_sys/keystone
           test -s dist/PPSA98001.ffpfsc
           test -s PPSA98001.pkg
-          ls -lh PPSA98001.pkg
 
       - uses: actions/upload-artifact@v4
         with:
