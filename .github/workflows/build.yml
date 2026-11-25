@@ -18,8 +18,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Registry names must be lowercase; the owner name may not be (Shabbypenguin), and a job-level
-      # `container:` image can't be lowercased, so the image is run explicitly.
       - name: Pull build environment image
         env:
           OWNER: ${{ github.repository_owner }}
@@ -35,24 +33,21 @@ jobs:
           set -euo pipefail
           docker run --rm -v "$PWD:/work" -w /work "$IMAGE" bash -c "make loader && make image-loader"
           mkdir -p /tmp/fpkg-builder /tmp/fpkg-out
-          curl -fsSL https://github.com/thanhsondev/PSVIETHOA-FPKG-Builder/releases/download/v3.2.0/PSVIETHOA-FPKG-Builder-3.2.0-linux-x64.tar.gz \
-            | tar -xz -C /tmp/fpkg-builder --strip-components=1
+          curl -fsSL https://github.com/thanhsondev/PSVIETHOA-FPKG-Builder/releases/download/v3.2.0/PSVIETHOA-FPKG-Builder-3.2.0-linux-x64.tar.gz | tar -xz -C /tmp/fpkg-builder --strip-components=1
           chmod +x /tmp/fpkg-builder/fpkg-cli
-          /tmp/fpkg-builder/fpkg-cli build \
-            --source build/titles/PPSA98001/dist/PPSA98001 \
-            --output /tmp/fpkg-out \
-            --overwrite
-          cp /tmp/fpkg-out/*.pkg "$PWD/PPSA98001.pkg"
+          /tmp/fpkg-builder/fpkg-cli build --source build/titles/PPSA98001/dist/PPSA98001 --output /tmp/fpkg-out --overwrite
+          mv /tmp/fpkg-out/*.pkg PPSA98001.pkg
 
       - name: Check title contents
         run: |
           set -euxo pipefail
-          ls -la
-          for file in eboot.bin sce_module/libc.prx sce_sys/param.json sce_sys/keystone; do
-            test -s "build/titles/PPSA98001/dist/PPSA98001/$file"
-          done
+          test -s build/titles/PPSA98001/dist/PPSA98001/eboot.bin
+          test -s build/titles/PPSA98001/dist/PPSA98001/sce_module/libc.prx
+          test -s build/titles/PPSA98001/dist/PPSA98001/sce_sys/param.json
+          test -s build/titles/PPSA98001/dist/PPSA98001/sce_sys/keystone
           test -s dist/PPSA98001.ffpfsc
           test -s PPSA98001.pkg
+          ls -lh PPSA98001.pkg
 
       - uses: actions/upload-artifact@v4
         with:
@@ -72,8 +67,6 @@ jobs:
           path: PPSA98001.pkg
           if-no-files-found: error
 
-  # The same loader on Linux, run against nothing but itself: catches build breaks of the shared adapters (the client is never
-  # downloaded in CI, so the run itself happens on a developer's PC with `make host-run`).
   host-loader:
     runs-on: ubuntu-24.04
     steps:
